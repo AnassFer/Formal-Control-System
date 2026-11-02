@@ -1,5 +1,7 @@
 # Symbolic control: shared Part 1 foundation
 
+New to the repository? Read [START_HERE.md](START_HERE.md) for a plain-language folder map, branch setup instructions, each person's tasks and the Part 2 starting point.
+
 This baseline prepares two students to implement Part 1 independently and gives a separate Part 2 group an immediately usable contract/fixture SDK. **All A/B production algorithms are throwing stubs. No Part 2 synthesis exists.** The CLI and future feature tests compile; only contracts, validation helpers and hand-authored fixture clients currently work.
 
 A physical state has infinitely many possible real values. A future implementation partitions a bounded domain into finitely many cells, selects physical control vectors, and encloses every possible next state from each closed cell under every allowed disturbance. All intersecting cell closures become possible successors. Multiple successors represent nondeterminism, not probabilities. Simulating a centre alone cannot establish this enclosure.
