@@ -1,0 +1,3 @@
+add_executable(part1_integration_tests part1.cpp)
+target_link_libraries(part1_integration_tests PRIVATE symctrl_part_a symctrl_part_b symctrl_test_support)
+symctrl_test(integration.thermostat part1_integration_tests thermostat integration TRUE)

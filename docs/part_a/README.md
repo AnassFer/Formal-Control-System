@@ -1,0 +1,5 @@
+# Part A implementation stream
+
+Branch `part-a/discretization`. Edit only the four part_a trees. The baseline grid/input/refinement factories throw NotImplemented; no production feature is started. Follow `../contracts.md`, `../source-map.md` and `../part1-final-structure.md`. Implement translation-unit-private classes in the reserved source modules; add optional private headers only here in the owned include tree.
+
+Implement grid indexing/geometry/point abstraction and closed internal intersections, explicit/Cartesian physical inputs and the supplied-policy concretisation adapter. Do not implement enclosures, graphs or synthesis. Update only local CMakeLists and owner tests/docs. A tests link A+common and no B/fixtures. Use Release-safe checks, add meaningful cases with label part_a, and require zero skips via `python3 tools/check_readiness.py build/dev --mode a`. Run `python3 tools/check_ownership.py auto` before handoff. Root instructions give the standard build commands; changes to frozen signatures need one coordinated common update first.

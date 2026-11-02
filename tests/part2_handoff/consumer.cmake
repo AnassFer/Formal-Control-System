@@ -1,0 +1,8 @@
+execute_process(COMMAND "${CONSUMER}" RESULT_VARIABLE result OUTPUT_VARIABLE actual ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "Fixture consumer failed: ${result} ${error}")
+endif()
+file(READ "${EXPECTED}" expected)
+if(NOT actual STREQUAL expected)
+    message(FATAL_ERROR "Fixture consumer output differs:\n${actual}\nExpected:\n${expected}")
+endif()

@@ -1,0 +1,5 @@
+add_executable(part_b_tests part_b.cpp)
+target_link_libraries(part_b_tests PRIVATE symctrl_part_b symctrl_fixture_support symctrl_test_support)
+foreach(case IN ITEMS thermostat affine capabilities graph boundaries limits building export)
+    symctrl_test(part_b.${case} part_b_tests ${case} part_b TRUE)
+endforeach()

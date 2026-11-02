@@ -1,0 +1,7 @@
+{
+  "contracts": ["contracts.shapes", "contracts.counts", "contracts.successors", "contracts.metadata"],
+  "handoff": ["handoff.thermostat", "handoff.choice", "handoff.consistency", "handoff.packages", "handoff.consumer"],
+  "part_a": ["part_a.indexing", "part_a.geometry", "part_a.inputs", "part_a.invalid", "part_a.policy"],
+  "part_b": ["part_b.thermostat", "part_b.affine", "part_b.capabilities", "part_b.graph", "part_b.boundaries", "part_b.limits", "part_b.building", "part_b.export"],
+  "integration": ["integration.thermostat"]
+}

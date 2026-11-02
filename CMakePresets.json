@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "configurePresets": [
+    {"name":"dev","generator":"Unix Makefiles","binaryDir":"${sourceDir}/build/dev","cacheVariables":{"CMAKE_BUILD_TYPE":"Debug"}},
+    {"name":"release","inherits":"dev","binaryDir":"${sourceDir}/build/release","cacheVariables":{"CMAKE_BUILD_TYPE":"Release"}},
+    {"name":"sdk","inherits":"dev","binaryDir":"${sourceDir}/build/sdk","cacheVariables":{"SYMCTRL_BUILD_PRODUCTION":"OFF"}},
+    {"name":"sanitize","inherits":"dev","binaryDir":"${sourceDir}/build/sanitize","cacheVariables":{"SYMCTRL_SANITIZERS":"ON"}}
+  ],
+  "buildPresets": [{"name":"dev","configurePreset":"dev"},{"name":"sdk","configurePreset":"sdk"}],
+  "testPresets": [{"name":"dev","configurePreset":"dev","output":{"outputOnFailure":true}},{"name":"sdk","configurePreset":"sdk","output":{"outputOnFailure":true}}]
+}

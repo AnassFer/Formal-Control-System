@@ -1,0 +1,2 @@
+add_library(symctrl_part_a uniform_grid.cpp input_catalog.cpp policy_adapter.cpp factories.cpp)
+target_link_libraries(symctrl_part_a PUBLIC symctrl_common PRIVATE symctrl_warnings)

@@ -1,0 +1,5 @@
+# Part B implementation stream
+
+Branch `part-b/abstraction`. Edit only the four part_b trees. Every production factory is a NotImplemented stub; enclosure/storage source files are reserved. Follow `../contracts.md`, `../source-map.md` and `../part1-final-structure.md` before implementing thermostat/ring dynamics, both enclosure methods, sparse immutable graphs, processing limits/statistics and complete-package export. No synthesis algorithm belongs here.
+
+Use the tiny `fixtures/support` grid/input views for isolated tests. Production B links only common/contracts, never A or fixtures. Do not implement a second production grid to avoid waiting for A. The fixture functions return owned immutable bundles and literal records; their zero statistics are not timings. B tests link B+fixture/common, not A. Local test/source CMakeLists are extensible; add cases with label part_b. Require `python3 tools/check_readiness.py build/dev --mode b` with zero skips and `python3 tools/check_ownership.py auto`. Record later implementation notes here rather than editing shared README/status/integration tests.

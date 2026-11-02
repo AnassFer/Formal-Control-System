@@ -1,0 +1,2 @@
+add_executable(part2_fixture_consumer part2_fixture_consumer.cpp)
+target_link_libraries(part2_fixture_consumer PRIVATE symctrl_fixture_support symctrl_warnings)

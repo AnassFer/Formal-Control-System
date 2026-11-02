@@ -1,0 +1,1 @@
+{"model":"ring_building","N":3,"alpha":0.45,"beta":0.045,"gamma":0.09,"Te":-1,"Th":50,"domain":{"lo":[17,17,17],"hi":[22,22,22]},"cells_per_dimension":[10,10,10],"input_axes":[[0,0.3,0.6],[0,0.3,0.6],[0,0.3,0.6]],"disturbance":{"lo":[],"hi":[]},"status":"specification_only"}

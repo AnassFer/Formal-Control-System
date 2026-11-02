@@ -1,0 +1,5 @@
+add_executable(part_a_tests part_a.cpp)
+target_link_libraries(part_a_tests PRIVATE symctrl_part_a symctrl_test_support)
+foreach(case IN ITEMS indexing geometry inputs invalid policy)
+    symctrl_test(part_a.${case} part_a_tests ${case} part_a TRUE)
+endforeach()

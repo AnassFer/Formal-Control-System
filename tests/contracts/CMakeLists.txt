@@ -1,0 +1,5 @@
+add_executable(contract_tests contracts.cpp)
+target_link_libraries(contract_tests PRIVATE symctrl_test_support)
+foreach(case IN ITEMS shapes counts successors metadata)
+    symctrl_test(contracts.${case} contract_tests ${case} contracts FALSE)
+endforeach()

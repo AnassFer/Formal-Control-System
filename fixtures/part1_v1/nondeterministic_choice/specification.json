@@ -1,0 +1,18 @@
+{
+  "specification_version": "1.0.0",
+  "model_id": "nondeterministic_choice_fixture",
+  "safe_states": [
+    1,
+    2
+  ],
+  "target_states": [
+    2
+  ],
+  "initial_memory": 0,
+  "manually_checked_expectation": {
+    "state": 1,
+    "input": 1,
+    "reason": "Input 0 also has unsafe successor 3. Input 1 has only successor 2."
+  },
+  "status": "hand_authored_expectation_not_synthesis_output"
+}

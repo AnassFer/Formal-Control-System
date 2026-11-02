@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "model_id": "thermostat_fixture",
+  "model_parameters": {
+    "a": 0.1,
+    "b": 0.2,
+    "T": 30
+  },
+  "provenance": "hand_authored_fixture",
+  "source": "Paper S7467 section 1 and bootstrap prompt section 8; manually transcribed, no algorithm executed",
+  "dimensions": {
+    "state": 1,
+    "input": 1,
+    "disturbance": 1
+  },
+  "internal_states": 3,
+  "input_count": 2,
+  "outside_state_id": 0,
+  "grid": {
+    "domain": {
+      "lo": [
+        17
+      ],
+      "hi": [
+        23
+      ]
+    },
+    "cells_per_dimension": [
+      3
+    ]
+  },
+  "semantics": {
+    "state_order": "dimension_0_fastest",
+    "input_order": "explicit_caller_order",
+    "point_ownership": "half_open_last_closed",
+    "cell_geometry": "closed",
+    "successor_intersection": "closure",
+    "outside_successors": "all_states",
+    "enabled_inputs": "all_states_all_inputs"
+  },
+  "numeric_guarantee": "uncertified_float",
+  "disturbance": {
+    "lo": [
+      10
+    ],
+    "hi": [
+      15
+    ]
+  },
+  "files": {
+    "cells": "cells.csv",
+    "inputs": "inputs.csv",
+    "transitions": "transitions.csv"
+  }
+}

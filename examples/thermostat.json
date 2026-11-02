@@ -1,0 +1,1 @@
+{"model":"thermostat","domain":{"lo":[17],"hi":[23]},"cells_per_dimension":[3],"inputs":[[0],[1]],"disturbance":{"lo":[10],"hi":[15]},"method":"cooperative_monotone","status":"specification_only"}

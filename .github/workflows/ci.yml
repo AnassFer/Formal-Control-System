@@ -1,0 +1,36 @@
+name: Foundation and feature checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      readiness:
+        description: Strict zero-skip gate (foundation is bootstrap)
+        type: choice
+        default: foundation
+        options: [foundation, a, b, integration]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: cmake -S . -B build/ci -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/ci --parallel 2
+      - run: ctest --test-dir build/ci --output-on-failure --no-tests=error
+      - run: python3 tools/check_fixture_packages.py
+      - run: python3 tools/check_readiness.py build/ci --mode foundation
+      - if: github.event_name == 'workflow_dispatch'
+        env:
+          READINESS_MODE: ${{ inputs.readiness }}
+        run: python3 tools/check_readiness.py build/ci --mode "$READINESS_MODE"
+      - run: cmake -S . -B build/sdk-ci -DSYMCTRL_BUILD_PRODUCTION=OFF -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - run: cmake --build build/sdk-ci --parallel 2
+      - run: ctest --test-dir build/sdk-ci --output-on-failure --no-tests=error

@@ -1,0 +1,9 @@
+contract=1.0.0 schema=1.0.0 model=thermostat_fixture
+provenance=hand_authored_fixture numeric=uncertified_float
+dimensions=1,1,1 M=3 A=2 OUT=0
+successors(1,0)=explicit: 0 1
+successors(3,0)=explicit: 2 3
+successors(0,0)=all: 0 1 2 3
+cell(2)=[19,21] input(1)=1
+OUT nonempty=1 contains_OUT=1
+fixture only; no generation or synthesis

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "model_id": "nondeterministic_choice_fixture",
+  "model_parameters": {},
+  "provenance": "hand_authored_fixture",
+  "source": "Bootstrap prompt section 18.4; hand-authored graph with separate task fixture",
+  "dimensions": {
+    "state": 1,
+    "input": 1,
+    "disturbance": 0
+  },
+  "internal_states": 3,
+  "input_count": 2,
+  "outside_state_id": 0,
+  "grid": {
+    "domain": {
+      "lo": [
+        0
+      ],
+      "hi": [
+        3
+      ]
+    },
+    "cells_per_dimension": [
+      3
+    ]
+  },
+  "semantics": {
+    "state_order": "dimension_0_fastest",
+    "input_order": "explicit_caller_order",
+    "point_ownership": "half_open_last_closed",
+    "cell_geometry": "closed",
+    "successor_intersection": "closure",
+    "outside_successors": "all_states",
+    "enabled_inputs": "all_states_all_inputs"
+  },
+  "numeric_guarantee": "uncertified_float",
+  "disturbance": {
+    "lo": [],
+    "hi": []
+  },
+  "files": {
+    "cells": "cells.csv",
+    "inputs": "inputs.csv",
+    "transitions": "transitions.csv"
+  }
+}

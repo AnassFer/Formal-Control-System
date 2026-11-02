@@ -1,0 +1,3 @@
+add_library(symctrl_fixture_support fixture.cpp)
+target_include_directories(symctrl_fixture_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(symctrl_fixture_support PUBLIC symctrl_common PRIVATE symctrl_warnings)

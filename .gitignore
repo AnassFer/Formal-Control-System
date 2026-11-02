@@ -1,0 +1,12 @@
+/build*/
+/out/
+/exports/
+/benchmarks/
+__pycache__/
+*.pyc
+/Project files/
+*.pdf
+/.agents/
+/.codex/
+/.aws/
+/Codex_Part1_Repository_Initialization_Prompt.md
