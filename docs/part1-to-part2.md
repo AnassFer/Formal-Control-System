@@ -1,30 +1,34 @@
-# Part 1 → Part 2 handoff, contract/schema 1.0.0
+# General Part 1 → Part 2 handoff, contract/schema 1.0.0
 
-Baseline reference: local tag `part1-contract-v1`. This handoff works now using **hand-authored fixtures**, without implementing any Part 1 factory. It is not production output or a certification claim. Complete public declarations are in `include/symctrl/contracts/`; [contracts.md](contracts.md) specifies all C++ signatures, shapes, exceptions and lifetimes.
+Part 1 produces a generic transition model; Part 2 uses it with a separate specification to synthesise a policy. Keep both stages model-independent. A robot is a later demonstration, not a special branch inside general solvers. Current scope is in [scope-correction.md](scope-correction.md).
 
-## In-process route
+The existing model-exchange contract remains version 1.0.0 at the original part1-contract-v1 baseline. This documentation revision changes neither public C++ declarations nor serialization. Planned synthesis/specification APIs are not implemented merely because a model/policy boundary exists.
 
-`ModelBundle` owns three `std::shared_ptr<const ...>` handles: IStateGrid for geometry/abstraction, IInputCatalog for physical actions, and ITransitionSystem for successors. Owned ModelMetadata includes versions, model identifier/parameters, provenance, source, n/m/q, M/A, OUT, numerical status, grid and disturbance bounds. `validateBundle(bundle)` checks that handles and metadata agree. It does not recompute transitions or certify the model. A published bundle is treated as immutable; copies retain safe handle ownership.
+## Immutable C++ route
 
-Use `fixtures::thermostat()` or `fixtures::nondeterministicChoice()` from `fixtures/support/fixture.hpp` now. These functions look up tiny literal tables. Later the producer will use the exact B factory `assembleModelBundle(shared_ptr<const IStateGrid>, shared_ptr<const IInputCatalog>, shared_ptr<const ITransitionSystem>, ModelMetadata)->ModelBundle`, after constructing a real graph through `buildSymbolicModel(...)`. That production assembly symbol is currently a throwing stub; fixtures do not call it.
+ModelBundle owns shared_ptr<const IStateGrid>, shared_ptr<const IInputCatalog>, shared_ptr<const ITransitionSystem> and matching owned ModelMetadata. Metadata records versions, identifier/parameters, source/provenance, n/m/q, M/A, OUT, numeric status, grid and disturbance bounds. validateBundle checks trivial handle/metadata consistency, not every graph edge or numerical soundness. Treat published views/metadata as immutable.
 
-Queries accept state IDs 0..M and actions 0..A-1. Geometry exists only for 1..M. `cellBounds` returns an owned closed Box; input/successor const references live with their immutable view objects and remain valid across queries. A graph owns its data independently of grid/input/enclosure build arguments. Consumers depend on public contracts, never A/B private headers or storage layout.
+Fixed bundles are available from fixtures/support/fixture.hpp; use fixtures::nondeterministicChoice() to study the generic graph/specification example. The working consumer is examples/part2_fixture_consumer.cpp. These fixtures use literal records rather than A/B factories.
 
-Use `contains(set,id,M)`, `nonempty(set,M)` and `forEachSuccessor(set,M,visitor)` from transitions.hpp. AllStates stores an empty vector yet means **every ID 0..M**; membership and OUT detection do not allocate. Iteration visits ascending IDs, including OUT. Explicit IDs must be sorted, unique and in range. An empty Explicit set is mathematically empty, but an invalid/incomplete result for these complete models. Check nonemptiness before a robust universal condition. All selected actions are enabled for every state; disabled actions need a versioned extension.
+The future producer's existing assembly boundary is assembleModelBundle(shared grid,shared inputs,shared transitions,metadata). It remains a B-owned stub. Graph construction through buildSymbolicModel consumes generic grid/input/enclosure views and owns its output independently of the build arguments. Input/successor references remain valid for their immutable view lifetime; cellBounds returns an owned closed Box.
 
-## Semantics and task separation
+Query states are 0..M and actions 0..A-1. OUT is state 0; geometry exists only for 1..M. All actions are enabled in all states under the current complete-model contract.
 
-Successors are nondeterministic. Robust control requires an action to meet the objective for **every** successor. One favourable edge, one BFS path or probability interpretation does not establish correctness. OUT is normally excluded from safe sets, so a universal successor includes losing behaviour. An empty Explicit set cannot create a successful action through vacuous truth.
+Use contains(set,id,M), nonempty(set,M) and forEachSuccessor(set,M,visitor). AllStates has empty storage but means every ID 0..M; membership/OUT detection needs no universal allocation. Explicit IDs are sorted unique values in range. Empty Explicit is representable diagnostically but invalid/incomplete producer output here. Check nonemptiness before any universal control test. Iteration is ascending and preserves the representation.
 
-Point abstraction is half-open with the last outer endpoint included; cell geometry and successor tests use closures. Outer-boundary contact can include OUT even when that point belongs to an internal cell. Region safety normally requires a whole closed cell to be included in a safe region; overlap or centre inclusion alone is insufficient. Labels, safe/target sets and any specification automaton come from the separate Part 2 specification, not from Part 1.
+## Meaning for general synthesis
 
-Part 2 may return an `ISymbolicPolicy` with `PolicyDecision decide(PolicyMemory previous_memory,StateId current_state) const`. Supply psi(-1), default `PolicyMemory{0}`, then feed each returned next_memory into the following call. The decision updates memory before action selection. Action IDs keep exactly the bundle's catalogue mapping. Missing entries/invalid memory raise out_of_range; the Part A adapter rejects OUT and invalid actions without a fallback. Richer synthesis internals stay private to Part 2. No policy generator is provided now.
+Successors represent nondeterminism. Robust control must meet the objective for every successor. One favourable edge/path or a probability interpretation is insufficient. OUT is normally excluded from safe sets, and AllStates therefore includes losing behaviour. Empty successors cannot create successful actions through vacuous truth. Disabled inputs need a versioned extension rather than a missing-row convention.
 
-NumericalGuarantee is truthful: current fixtures and future ordinary-double code are `uncertified_float`. A mathematically sound formula plus passing tests does not establish validated numerical enclosures. A future `validated_enclosure` producer must supply an actual rounding/error-enclosure justification in provenance/source documentation. Fixture compatibility cannot prove future physical or synthesis correctness.
+Applications/examples supply safe/target sets, labels and optional specification automata separately from the model. Use whole-cell inclusion when conservatively labelling a region as safe; overlap or centre inclusion alone is insufficient. Cell/successor geometry uses closures; point ownership is half-open except the final upper boundary. Outer-boundary contact can include OUT even if that exact point belongs internally.
 
-## Language-independent directory package
+Part 2 may return an ISymbolicPolicy. Its decide(previous_memory,current_state) returns next_memory and action, updating memory before action choice. Initial memory defaults to 0 unless explicitly specified otherwise. Preserve the model's action catalogue mapping. Missing entries/invalid memory fail explicitly. A's adapter rejects OUT/invalid actions and returns an owned physical vector without a fallback. No policy-synthesis factory is implemented now; its precise public API requires a common update.
 
-Exactly four model files constitute a complete v1 package:
+Fixtures are hand-authored and ordinary floating arithmetic is uncertified. Neither fixture compatibility nor successful synthesis upgrades numerical status to a certified physical guarantee.
+
+## Language-independent directory format
+
+A complete v1 model package consists of:
 
 ```text
 manifest.json
@@ -33,48 +37,43 @@ inputs.csv
 transitions.csv
 ```
 
-The complete JSON Schema is [../schemas/part1-model-v1.schema.json](../schemas/part1-model-v1.schema.json), draft 2020-12. The complete concrete manifest is [../fixtures/part1_v1/thermostat/manifest.json](../fixtures/part1_v1/thermostat/manifest.json); the second package has its own complete manifest. No field is undecided.
+The [schema](../schemas/part1-model-v1.schema.json) is JSON Schema draft 2020-12. A complete generic example manifest is [the choice fixture](../fixtures/part1_v1/nondeterministic_choice/manifest.json).
 
-| Required manifest field | Frozen meaning |
+| Required manifest field | Meaning |
 |---|---|
-| schema_version, contract_version | Strings `1.0.0` |
-| model_id | Nonempty identifier; agrees with separate specification if supplied |
-| model_parameters | Object mapping parameter names to finite numbers; e.g. a=.1,b=.2,T=30 |
-| provenance | `hand_authored_fixture` or future `generated_part1` |
-| source | Nonempty human-readable provenance; include numerical justification if validated |
-| dimensions | Object: positive integer state/input dimensions, nonnegative disturbance dimension |
-| internal_states, input_count | Positive M excluding OUT and positive A |
-| outside_state_id | Integer 0 |
-| grid | Object with domain `{lo,hi}` arrays of length n and cells_per_dimension of n positive uint32 counts, product M |
-| semantics | All seven fixed fields listed below |
-| numeric_guarantee | `uncertified_float` or justified `validated_enclosure` |
-| disturbance | `{lo,hi}` arrays of length q; both empty when q=0 |
-| files | Relative filenames: cells=`cells.csv`, inputs=`inputs.csv`, transitions=`transitions.csv` |
+| schema_version, contract_version | 1.0.0 strings |
+| model_id, model_parameters | Nonempty identifier and finite numeric parameter map; no solver special case |
+| provenance, source | hand_authored_fixture or generated_part1 plus nonempty source description |
+| dimensions | Positive state/input and nonnegative disturbance dimensions |
+| internal_states, input_count, outside_state_id | Positive M/A and OUT=0 |
+| grid | Finite positive-width domain and positive uint32 per-axis cell counts with product M |
+| semantics | Fixed ordering, ownership, closure, OUT and enabled-action meanings below |
+| numeric_guarantee | uncertified_float or genuinely justified validated_enclosure |
+| disturbance | q-dimensional lo/hi arrays; both empty for q=0 |
+| files | cells.csv, inputs.csv, transitions.csv as relative fixed filenames |
 
-Semantics fields are `state_order=dimension_0_fastest`, `input_order=explicit_caller_order` or `cartesian_dimension_0_fastest`, `point_ownership=half_open_last_closed`, `cell_geometry=closed`, `successor_intersection=closure`, `outside_successors=all_states`, `enabled_inputs=all_states_all_inputs`. Even when a producer uses Cartesian inputs, inputs.csv records every selected physical vector in its final action-ID order; consumers need no enumeration algorithm.
+The seven semantics fields are state_order=dimension_0_fastest, input_order=explicit_caller_order or cartesian_dimension_0_fastest, point_ownership=half_open_last_closed, cell_geometry=closed, successor_intersection=closure, outside_successors=all_states and enabled_inputs=all_states_all_inputs.
 
-JSON and CSV use UTF-8 without BOM. CSV uses LF newlines, a final newline, ASCII comma separators and a decimal point independent of locale. There are no comment/blank rows or omitted columns. Headers are literal and have no quotes/spaces. Canonical integer fields use decimal digits, no sign/leading zeros except `0`, and must fit uint64; M<=UINT64_MAX-1. Numeric vector fields are finite JSON-style decimal tokens, optional decimal fraction and exponent, no NaN/infinity/hex/locale comma. Future double export uses sufficient round-trip precision (`std::numeric_limits<double>::max_digits10`, normally 17 significant digits); exact integer-looking coordinates may be written `17`. These tiny fixed fixture decimals are exactly the specified source literals, not the output of an exporter.
+CSV headers expand dimensions literally:
 
 ```text
-cells.csv:
 state_id,lower_0,...,lower_(n-1),upper_0,...,upper_(n-1)
-inputs.csv:
 input_id,u_0,...,u_(m-1)
-transitions.csv:
 state_id,input_id,kind,successor_id
 ```
 
-The ellipses describe header expansion only; concrete files have expanded headers such as `state_id,lower_0,upper_0`. Cells have exactly M rows in ID order 1..M; no finite OUT box exists. Closed bounds agree with the uniform grid/domain and dimension-0-fastest IDs. Inputs have exactly A rows in ID order 0..A-1; duplicate physical vectors are allowed as distinct actions, duplicate IDs are not.
+Ellipses describe expansion, not characters in actual files. All files use UTF-8 without BOM; CSV uses comma, LF/final newline, decimal point and no comment/blank rows. Headers are literal. IDs use unsigned decimal without leading zeros except 0 and fit uint64; M<=UINT64_MAX-1. Coordinates are finite decimal tokens with optional fraction/exponent, no NaN/infinity/hex/locale comma. Future double export uses max_digits10 round-trip precision, normally 17 significant digits; exact integer-looking coordinates can be written as integers.
 
-Transition rows sort lexicographically by numeric state_id, input_id and successor_id. They cover **every** state/action pair, including OUT. `kind=explicit` has one nonempty integer successor per row; grouped rows for a pair form its sorted unique set. `kind=all` has exactly one row and an empty fourth field (including the trailing comma), meaning all 0..M. Never combine all and explicit for one pair. OUT has one all row per valid action. Missing pairs, duplicate rows, invalid IDs, malformed fields, inconsistent counts/dimensions/geometry or empty explicit results are rejected. There is no missing-row convention for disabled actions or empty sets. Universal rows cannot be mistaken for emptiness.
+Cells have exactly M rows ordered 1..M, correct n-dimensional closed grid boxes and no finite OUT row. Inputs have exactly A rows ordered 0..A-1, correct physical-vector dimensions and caller/Cartesian ordering; duplicate physical vectors may have distinct IDs.
 
-The JSON Schema checks manifest structure and fixed meanings; dynamic shape/product/cross-file completeness and numerical/provenance truth require semantic validation. `tools/check_fixture_packages.py` is an optional test-only semantic checker for these tiny packages, not a production importer/loader/exporter. C++ handoff tests compare complete literal CSV tables and public views. A consumer's future loader must reject inconsistent packages before exposing a model.
+Transitions sort numerically by state/action/successor and cover every pair including OUT. Explicit rows have one nonempty successor ID each, grouped sorted/unique by pair. An all pair has exactly one row with an empty fourth field/trailing comma and means every 0..M. Never mix all and explicit rows for one pair. Every OUT/action pair is universal. Reject missing pairs, duplicate rows, invalid IDs/kinds/shapes, inconsistent counts/geometry and empty Explicit producer results. There is no implicit disabled/missing-pair convention.
 
-v1 readers reject unsupported major versions. This baseline's C++ helper and schema accept exactly 1.0.0; compatible additions must be explicitly negotiated. No “minor” addition can silently change IDs, transitions, enabled actions or boundary meaning. Incompatible C++ signatures or serialization require coordinated versioning with A, B and the Part 2 group.
+The schema checks structure; cross-file dimensions/products/completeness and numerical truth require semantic validation. tools/check_fixture_packages.py is an optional checker for fixed samples, not a production importer/exporter. Public production export remains a stub.
 
-## Fixtures available immediately
+Consumers reject unsupported major versions. Current helpers/schema accept exactly 1.0.0. Negotiate compatible additions; incompatible ID/boundary/transition/signature meaning requires coordinated versioning for both owners and consumers.
 
-* `fixtures/part1_v1/thermostat/`: manifest, three closed boxes, two inputs, the six oracle successor sets, both universal OUT rows, plus `expected-output.txt`. No algorithm generated them.
-* `fixtures/part1_v1/nondeterministic_choice/`: three regular states, 1D domain [0,3], unit cells and physical inputs [0]/[1]. Edges: (1,0)→{2,3}, (1,1)→{2}, (2,0/1)→{2}, (3,0/1)→{3}, OUT→AllStates. `specification.json` separately supplies safe={1,2}, target={2}, initial memory 0 and a **manually checked** expectation: state 1 should use action 1, because action 0 can reach unsafe state 3. This statement is not a computed synthesis result.
+## Fixture and client base
 
-`examples/part2_fixture_consumer.cpp` prints fixture metadata, successor sets including OUT, cell bounds, physical actions and membership/iteration. It performs no search, synthesis, dynamics or model generation. It links only `symctrl_fixture_support -> symctrl_common -> symctrl_contracts`, as do `part2_handoff_tests`. [part2-quickstart.md](part2-quickstart.md) supplies tested same/separate repository commands.
+The generic choice fixture has states 1,2,3, OUT 0, two actions, 1D domain [0,3] and unit cells. At state 1, action 0 reaches {2,3}, action 1 reaches {2}; state 2 self-loops at 2, state 3 at 3, and OUT is universal. The separate specification has safe={1,2}, target={2} and a manually checked expected action 1 at state 1. This is fixed data, not computed synthesis.
+
+symctrl_fixture_support, part2_fixture_consumer and part2_handoff_tests link only common/contracts/fixtures, never A/B production libraries. [The quickstart](part2-quickstart.md) covers same/separate repository arrangements. Later replace fixed data with real generic producer output and add algorithm-level integration checks; do not claim a fixture pass proves the completed pipeline.

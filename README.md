@@ -1,69 +1,79 @@
-# Symbolic control: shared Part 1 foundation
+# General symbolic-control template
 
-New to the repository? Read [START_HERE.md](START_HERE.md) for a plain-language folder map, branch setup instructions, each person's tasks and the Part 2 starting point.
+Read [START_HERE.md](START_HERE.md) for folders, branches and each person's work. The [scope note and repository audit](docs/scope-correction.md) explain the current model-independent plan.
 
-This baseline prepares two students to implement Part 1 independently and gives a separate Part 2 group an immediately usable contract/fixture SDK. **All A/B production algorithms are throwing stubs. No Part 2 synthesis exists.** The CLI and future feature tests compile; only contracts, validation helpers and hand-authored fixture clients currently work.
+| Stage | Deliverable |
+|---|---|
+| Paper Part 1 | General abstraction/refinement foundation, implemented in A/B tracks |
+| Paper Part 2 | General symbolic-controller synthesis on that foundation; reserved base supplied now |
+| Later example | Demonstrate the completed reusable pipeline with a mobile robot |
 
-A physical state has infinitely many possible real values. A future implementation partitions a bounded domain into finitely many cells, selects physical control vectors, and encloses every possible next state from each closed cell under every allowed disturbance. All intersecting cell closures become possible successors. Multiple successors represent nondeterminism, not probabilities. Simulating a centre alone cannot establish this enclosure.
+A owns grids, input catalogues and policy refinement. B owns general reachability, transitions, storage/export and model bundles. The Part 2 base exposes the model and policy boundary for later synthesis. Keep all these stages general; no particular physical example defines the solver.
 
-The models are discrete in time and continuous in state: `x_next = f(x,u,w)`. No ODE integrator is needed. Abstraction maps a measured state to a cell ID; concretisation maps a symbolic action ID to its physical input vector. Later synthesis operates on this finite model and returns a policy.
+## Pipeline
 
-Part 1 is Section 1 of paper S7467, through Section 1.2 (printed page 6 / PDF page 7). The slides' full safety-synthesis and largest-N competition is a later milestone. The A/B names are ownership labels, not article subsection names. See the [source map](docs/source-map.md).
+```text
+Supplied dynamics + domains + inputs + disturbances -> transition model
+Transition model + separate specification -> symbolic policy
+Measured state + policy + previous memory -> physical input
+```
 
-## Build and actual bootstrap status
+A discretises a continuous-state domain. B encloses every possible next state from each closed cell under a chosen input and allowed disturbances. The resulting finite graph is nondeterministic. Later synthesis must satisfy its objective for every possible successor. A's runtime adapter applies the supplied policy and returns an owned physical input.
 
-Prerequisites: C++17 compiler, CMake >=3.21 and Make (GCC/Clang on Linux). An ordinary configure/build/test uses only the standard library and requires no network or Python.
+## Current status
+
+**This is a template, not a completed controller.** Public interfaces, small common helpers and fixed fixture consumers work. Production A/B factories remain unimplemented. Part 2 algorithms and the robot example are not implemented. This correction changes Markdown only.
+
+The core IDynamics, IReachability, ITransitionSystem, ModelBundle and policy interfaces are model-independent. The original v1 tree also contains legacy example-specific scaffolding; it is outside the required generic design and unchanged by this documentation task. Separate such adapters from core algorithms in a coordinated later code update.
+
+## Build existing checks
+
+C++17, CMake >=3.21 and Make are required; GCC/Clang on Linux are supported. Ordinary C++ builds/tests need no network or Python.
 
 ```sh
 cmake --preset dev
 cmake --build build/dev --parallel 2
 ctest --test-dir build/dev --output-on-failure --no-tests=error
-ctest --test-dir build/dev -L 'contracts|handoff' --output-on-failure
-ctest --test-dir build/dev -L part_a --output-on-failure
-ctest --test-dir build/dev -L part_b --output-on-failure
-ctest --test-dir build/dev -L integration --output-on-failure
-./build/dev/examples/part2_fixture_consumer
 ```
 
-Baseline result: **9 passed, 14 skipped, 0 failed** (23 registered tests). Five A cases, eight B cases and one production integration case skip only after encountering `NotImplemented`; they contain real future assertions. CTest's aggregate “100%” includes skips and does not establish feature readiness. [Validation evidence](docs/bootstrap-validation.md) records compiler/SDK/tool checks and limitations.
+Original scaffold result: **9 passes, 14 expected feature skips, 0 failures**. Only NotImplemented permits a skip. These checks do not prove full-paper functionality; generic synthesis and later robot acceptance tests do not exist yet. See the [historical validation record](docs/bootstrap-validation.md).
 
-Optional Python 3 developer gates:
+Optional developer gates:
 
 ```sh
 python3 tools/check_fixture_packages.py
-python3 tools/check_readiness.py build/dev --mode foundation  # passes: 9, zero skips
-python3 tools/check_readiness.py build/dev --mode a           # fails now: pending A
-python3 tools/check_readiness.py build/dev --mode b           # fails now: pending B
-python3 tools/check_readiness.py build/dev --mode integration # fails now: 14 skips
+python3 tools/check_readiness.py build/dev --mode foundation
+python3 tools/check_readiness.py build/dev --mode a
+python3 tools/check_readiness.py build/dev --mode b
+python3 tools/check_readiness.py build/dev --mode integration
 ```
 
-Readiness rejects missing, disabled, failed or skipped required tests, including zero-test builds. The required registry is `tools/required-tests.json`; additional owner tests with the relevant CTest label are included automatically. Do not weaken it to claim completion. `cmake --preset release` supplies Release, `sanitize` enables optional GCC/Clang address/undefined sanitizers, and `sdk` excludes A/B and the CLI. Use separate build directories per checkout.
+Foundation readiness passes when its nine checks are built; feature readiness currently rejects missing implementations. The registry must evolve with agreed generic acceptance tests before advertising completion. Release, sanitize and SDK presets are available.
 
-## Ownership and handoff
+## Ownership
 
-| Owner | Allowed implementation paths |
-|---|---|
-| A | `include/symctrl/part_a/**`, `src/part_a/**`, `tests/part_a/**`, `docs/part_a/**` |
-| B | `include/symctrl/part_b/**`, `src/part_b/**`, `tests/part_b/**`, `docs/part_b/**` |
-| Part 2, later | The same four trees named `part2` |
-| Frozen shared | All other tracked files, including contracts, integration tests, fixtures, CLI and root build/docs |
+| Owner | Feature paths | Main responsibility |
+|---|---|---|
+| A | `{include/symctrl,src,tests,docs}/part_a/` | Grids/inputs and runtime refinement |
+| B | `{include/symctrl,src,tests,docs}/part_b/` | General reachability/transition-model production |
+| Part 2 | `{include/symctrl,src,tests,docs}/part2/` | Later general controller synthesis |
+| Coordinator | Shared contracts/build/docs/fixtures/tests | Common versions and integration |
 
-A owns grid discretisation, input catalogues and policy refinement. B owns dynamics, enclosures, graph construction/storage/export and abstraction statistics. B tests use tiny table-backed fake A views. Neither production library links the other or fixture support. Each owner has local CMake entry points. [Ownership rules](docs/ownership.md), [contribution instructions](CONTRIBUTING.md) and [Git/worktree/integration workflow](docs/git-workflow.md) give exact commands.
+Brace notation abbreviates four real directories; [ownership.md](docs/ownership.md) lists them. Each owner extends local CMake files. Contracts include no private A/B header. The original part1-contract-v1 tag stays fixed; this task changes no branch ref or separate worktree.
 
-Public headers are in `include/symctrl/contracts/`. Read [exact API/conventions](docs/contracts.md), the [final Part 1 file blueprint](docs/part1-final-structure.md), [implementation status](docs/implementation-status.md), the [Part 1→2 contract/file format](docs/part1-to-part2.md) and [Part 2 quickstart](docs/part2-quickstart.md). The local baseline tag is `part1-contract-v1`; both requested branches start there: `part-a/discretization` and `part-b/abstraction`. No push is performed by bootstrap; local refs are not evidence that another student can fetch them.
+Read [A's notes](docs/part_a/README.md), [B's notes](docs/part_b/README.md), [the blueprint](docs/part1-final-structure.md), [status](docs/implementation-status.md), [contracts](docs/contracts.md) and [Git workflow](docs/git-workflow.md).
 
-## Thermostat and future CLI
+## Part 2 starting base
 
-The article's thermostat uses `x_next=(0.9-0.2*u)*x+0.1*w+6*u`, `X=[17,23]`, `W=[10,15]`, cells `[17,19)`, `[19,21)`, `[21,23]` and action IDs 0/1 for physical inputs OFF/ON. Cell 1 with OFF reaches `[16.3,18.6]`, so successors include OUT and cell 1. Cell 1 with ON reaches `[18.9,20.8]`, intersecting cells 1 and 2. The complete six-row oracle is frozen in [the source map](docs/source-map.md) and integration tests. A manually supplied policy chooses ON at state 1, OFF at 2/3; it is not synthesis output.
-
-These commands are wired to production factories and **currently return exit code 2 with “not implemented”**:
+Read [PART2_HANDOFF.md](PART2_HANDOFF.md), [the quickstart](docs/part2-quickstart.md) and [the API/file-format handoff](docs/part1-to-part2.md).
 
 ```sh
-./build/dev/apps/symctrl_cli thermostat
-./build/dev/apps/symctrl_cli thermostat-policy
-./build/dev/apps/symctrl_cli export-thermostat exports/thermostat
+cmake --preset sdk
+cmake --build build/sdk --parallel 2
+ctest --test-dir build/sdk --output-on-failure --no-tests=error
+./build/sdk/examples/part2_fixture_consumer
 ```
 
-The future explicit benchmark is `./build/dev/apps/symctrl_cli building-n3`; it is documented here, not executed during bootstrap. It retains N=3, `[17,22]^3`, ten cells/axis and inputs `{0,0.3,0.6}^3`. Model configuration JSON in `examples/` is specification data, not an implemented config loader. Graph exports include IDs, ordering, closure/OUT semantics and truthful numerical status. Ordinary doubles are uncertified; no certified physical guarantee is claimed.
+The fixture consumer and nine contract/handoff checks work without A/B libraries. Fixtures are fixed examples, not production algorithm output. The earlier generated handoff archive has historical documentation; use the current Markdown as guidance.
 
-CI runs both compilers, the full bootstrap CTest suite and a separate SDK build. A manually selected strict readiness gate is available after implementation. Checkout v7 usage was verified against the [official action documentation](https://github.com/actions/checkout#usage); no hosted workflow has run as part of local bootstrap.
+No algorithms, public APIs, schema, CMake or tests are changed by this documentation-only revision. No commit or push is performed. Ordinary doubles remain uncertified.

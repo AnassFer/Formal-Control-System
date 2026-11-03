@@ -1,191 +1,99 @@
-# Start here: a beginner's guide to the project
+# Start here: the general symbolic-control template
 
-Read this first if you are unsure what the folders mean, which files to edit, or how your work connects to your teammates' work.
+This guide explains the repository and where each person works. The project stays general through the paper's first and second parts. A mobile robot will be used as an example after the reusable pipeline is ready.
 
-The project has **two people working on Part 1** and **a separate group working on Part 2**. They can work at the same time. This guide explains their future work; it does not mean those features already exist.
+## 1. What the project does
 
-## 1. What are we trying to build?
+A real state can have continuously many values. We divide a bounded state domain into numbered cells and select a finite catalogue of input vectors. For each cell and selected input, we enclose every possible next physical state, accounting for the whole cell and all allowed disturbances. The cells that the enclosure intersects become possible symbolic successors.
 
-Imagine a room whose temperature is 18°C. A heater can be OFF or ON. The outside temperature changes, so switching the heater ON does not always produce exactly the same next temperature.
+Later, a synthesis algorithm receives this finite graph and a separate objective, then chooses actions that meet the objective for every possible successor. At runtime, an adapter maps the measured physical state to a cell, asks the policy for an action and returns its physical input vector.
 
-Instead of working with every possible decimal temperature, we group temperatures into numbered cells:
-
-| State ID | Temperatures owned by that state |
+| Stage/person | Job |
 |---|---|
-| 1 | 17°C up to, but not including, 19°C |
-| 2 | 19°C up to, but not including, 21°C |
-| 3 | 21°C through 23°C, including 23°C |
-| 0 | Outside the chosen temperature domain |
+| Part 1, person A | General grids, input catalogues and runtime refinement of a supplied policy |
+| Part 1, person B | General reachability enclosures, transition graph, bundles and export |
+| Part 2 team/base | Later general controller synthesis from a model and a separate specification |
+| Later example | Use the completed engine with a mobile robot |
 
-For example, 18°C belongs to state 1, 19°C belongs to state 2, and 24°C is outside, represented by state 0.
+A/B are development owners inside Part 1, not different physical applications. [The scope note](docs/scope-correction.md) and [source map](docs/source-map.md) explain the paper-stage boundaries.
 
-Our program will answer questions such as: **“Starting anywhere in state 1, if the heater is ON, which states could come next?”** The answer can contain several states because the exact initial temperature and disturbance vary.
+## 2. What is already implemented?
 
-The work is divided as follows:
+The repository is a foundation. Shared types/interfaces, small validation/representation helpers and fixed fixture consumers work. Production A/B factories are stubs that throw NotImplemented. Part 2 synthesis and the robot example do not exist yet.
 
-| Person/group | Main question to answer | What they produce |
-|---|---|---|
-| Person A | Which cell contains this temperature, and which physical input does an action mean? | State grid, input catalogue and policy adapter |
-| Person B | From each cell and input, which cells could come next? | Dynamics, reachable enclosures and a transition graph/model package |
-| Part 2 group | Given this graph and a goal, which action should we choose? | A symbolic control policy |
-| Coordinator | Do the pieces still agree and work together? | Shared contract updates and the integrated project |
+A fixture is fixed example data, written by hand so another person can test a consumer before a producer is complete. A stub is a function with the agreed signature but no production implementation. Neither should be described as a finished engine.
 
-The coordinator can be one of the students wearing a second role. It does not require a fourth person. The important point is that shared changes are agreed once rather than made differently by each person.
+The original common starting point is tag part1-contract-v1, commit 25c6fe909cac531c2a3e1d2593cd598ff4522064. The tag remains fixed. This documentation revision changes no C++/build/test file, branch ref or implementation status.
 
-**Part 1 builds the model. Part 2 uses that model to choose actions.** Person A's adapter later turns Part 2's chosen action into a physical input for the system.
+## 3. Useful words
 
-The article's Section 1 defines Part 1. The slides also discuss controller synthesis and a largest-building competition, which go beyond Part 1. See [the source map](docs/source-map.md) for the exact mathematical scope.
-
-## 2. What is already done, and what is still missing?
-
-The repository currently contains a foundation: agreed interfaces, small common helpers, empty production implementations, tests, examples and documentation.
-
-| Item | Current state |
+| Word | Meaning |
 |---|---|
-| Shared C++ interfaces and file format | Written and versioned |
-| Validation and successor-set helpers | Working |
-| Two tiny hand-written example models | Working fixtures |
-| Example program reading a fixture | Working |
-| Person A's production features | Unimplemented stubs |
-| Person B's production features | Unimplemented stubs |
-| Part 2's controller algorithms | Not started |
+| Repository/root | Project and Git history / its top folder containing CMakeLists.txt |
+| Commit | A saved local snapshot |
+| Branch | A named line of development such as part-b/abstraction |
+| Tag | A label attached to one particular commit |
+| Clone | A separate copy of a repository, often on another computer |
+| Worktree | Another folder checked out on a branch of the same local repository |
+| Push | Send local commits/refs to a remote server |
+| Interface/contract | Agreed operations, shapes, errors and meanings other code relies on |
+| Factory | A function creating an object, such as makeUniformGrid |
+| Build | Compile sources into libraries/executables |
+| Successor | A possible next symbolic state after an action |
+| Policy | A rule returning an action and possibly updated memory |
+| SDK | Public headers/helpers/examples another project can build against |
 
-A **stub** is a function with the correct name and arguments whose body currently throws `symctrl::NotImplemented`. It marks the place where the real implementation belongs.
+.hpp files describe types/interfaces; .cpp files contain implementations. Here public contracts are shared and owner-specific source directories hold future implementations.
 
-A **fixture** is a tiny, fixed example written by hand so other people can develop and test their code. It is not output from a completed Part 1 algorithm.
-
-The original common starting point is:
-
-```text
-Tag:    part1-contract-v1
-Commit: 25c6fe909cac531c2a3e1d2593cd598ff4522064
-```
-
-The local branches `main`, `part-a/discretization` and `part-b/abstraction` were all created at this commit. Nothing was pushed during initialisation. The beginner guide you are reading is a later coordinator documentation addition; the original tag continues to identify the original foundation.
-
-## 3. A few words you will see everywhere
-
-| Word | Meaning here |
-|---|---|
-| Repository / repo | The project files together with their Git history |
-| Repository root | The top project folder containing `README.md`, `CMakeLists.txt` and `.git/` |
-| Branch | A named line of development, such as Person A's work |
-| Commit | A saved snapshot of changes in local Git history |
-| Tag | A name for a particular saved commit; our tag marks the agreed common foundation |
-| Clone | A separate copy of a Git repository, usually on a person's own computer |
-| Worktree | Another folder connected to the same local Git repository, with its own checked-out branch |
-| Push | Sending local commits/refs to a remote server such as GitHub |
-| Interface / contract | The agreed operations and meanings that other code can rely on |
-| Factory | A function that creates an object, such as `makeUniformGrid(...)` |
-| Build | Compile the C++ source into libraries and executable programs |
-| Test | Run checks that compare behaviour with expected results |
-| Transition / successor | A possible next symbolic state after choosing an input |
-| Policy | A rule that chooses an action from the current state and possibly some memory |
-| SDK | The shared headers/helpers/examples that another group can build against |
-
-In C++, `.hpp` files normally describe types and operations; `.cpp` files contain implementations. Here the shared `.hpp` files are the agreed public contract, while the owner-specific `.cpp` files are where most implementation work will happen.
-
-## 4. What is inside each folder?
-
-Paths in this guide are relative to the repository root unless shown as an absolute path beginning with `/`.
+## 4. Folder map
 
 ```text
 Automate Project/
-├── START_HERE.md                 This guide
-├── README.md                     Project overview and standard commands
-├── AGENTS.md                     Rules for coding assistants
-├── CONTRIBUTING.md               Rules for contributors
-├── CMakeLists.txt                Shared top-level build setup
-├── CMakePresets.json             Named build configurations
-├── include/symctrl/
-│   ├── contracts/                Shared public interfaces
-│   ├── part_a/                   A's optional private headers
-│   ├── part_b/                   B's optional private headers
-│   └── part2/                    Part 2's headers
-├── src/
-│   ├── common/                   Completed small shared helpers
-│   ├── part_a/                   A's production implementation
-│   ├── part_b/                   B's production implementation
-│   └── part2/                    Part 2's future implementation
-├── tests/                        Automated checks, separated by owner/purpose
-├── fixtures/                     Fixed examples used before real algorithms exist
-├── examples/                     Small programs and model configurations
-├── apps/                         Future production command-line program
-├── schemas/                      Rules for the model-package file format
-├── docs/                         Explanations, contracts and workflow details
-├── tools/                        Ownership, readiness and fixture-check scripts
-├── .github/workflows/            Hosted CI configuration
-├── Project files/                Local source PDFs; not committed
-├── build/                        Generated build output; not committed
-└── .git/                         Git's internal data; leave it to Git
+  START_HERE.md                  This guide
+  README.md                      Overview and build commands
+  AGENTS.md                      Coding-assistant instructions
+  CONTRIBUTING.md                Contribution rules
+  CMakeLists.txt                 Shared top-level build
+  CMakePresets.json              dev/release/sdk/sanitize settings
+  include/symctrl/contracts/     Shared public types/interfaces
+  include/symctrl/part_a/         A's private headers
+  include/symctrl/part_b/         B's private headers
+  include/symctrl/part2/          Later Part 2 headers
+  src/common/                    Completed shared helpers
+  src/part_a/                    A implementation + local CMake
+  src/part_b/                    B implementation + local CMake
+  src/part2/                     Reserved synthesis base + local CMake
+  tests/                        Checks separated by purpose/owner
+  fixtures/                     Fixed example models and adapters
+  examples/                     Existing fixture consumer/standalone client
+  apps/                         Legacy CLI skeleton; no completed general CLI
+  schemas/                      Model-package format
+  docs/                         Contracts, plans and owner notes
+  tools/                        Ownership/readiness/fixture checks
+  .github/workflows/             CI setup
+  Project files/                Local source PDFs; not committed
+  build/                        Generated output; not committed
+  .git/                         Git internal data; manage through Git
 ```
 
-Some generated/local folders appear only after setup or a build. The PDFs are available in the original workspace; they are ignored and will not automatically appear in a clone.
+Some local/generated folders appear only after setup. The existing v1 source tree also contains legacy example-specific scaffolding. It does not define the general design and is unchanged by this Markdown-only task.
 
-### The shared headers: learn the names, keep the agreement
+The contract headers describe: types/validation (types.hpp), grids (grid.hpp), input vectors (inputs.hpp), injected dynamics (dynamics.hpp), enclosures (reachability.hpp), successor sets/graphs (transitions.hpp), policy execution (policy.hpp), bundles (model_bundle.hpp) and public factories (factories.hpp).
 
-| File in `include/symctrl/contracts/` | What it describes |
+## 5. Where each person edits
+
+| Owner | Allowed paths |
 |---|---|
-| `types.hpp` | IDs, vectors, boxes, grid settings, exceptions and validation helpers |
-| `grid.hpp` | How to ask for a cell ID, cell bounds or intersecting cells |
-| `inputs.hpp` | How to turn an action ID into its physical input vector |
-| `dynamics.hpp` | How the physical system moves one step and exposes mathematical bounds |
-| `reachability.hpp` | How to request a box enclosing all possible next physical states |
-| `transitions.hpp` | How to ask for possible next symbolic states |
-| `policy.hpp` | How a symbolic policy returns its chosen action and updated memory |
-| `model_bundle.hpp` | How grid, inputs, transitions and metadata are packaged together |
-| `factories.hpp` | The exact public creation/refinement/export function declarations |
+| A | include/symctrl/part_a/, src/part_a/, tests/part_a/, docs/part_a/ |
+| B | include/symctrl/part_b/, src/part_b/, tests/part_b/, docs/part_b/ |
+| Part 2 | include/symctrl/part2/, src/part2/, tests/part2/, docs/part2/ |
+| Coordinator | Shared contracts/build/docs/fixtures/common tests and integration |
 
-Think of these files as the agreed plugs and sockets. Each person implements their side so the existing connections fit. If a signature or meaning really needs to change, explain the problem to the coordinator first. Read [contracts.md](docs/contracts.md) for exact behaviour.
+Everyone can read all files. Ordinary feature changes stay in the owner's four trees. Local source/test CMakeLists are already included by the root; extend them rather than editing the root build for each new file. A necessary shared change is agreed and validated once for all consumers.
 
-### Tests: which checks are for whom?
+## 6. Tools and current location
 
-| Folder | Purpose | Who normally edits it? |
-|---|---|---|
-| `tests/contracts/` | Shared types, validation and representation checks | Coordinator |
-| `tests/part_a/` | Real A implementation checks | A |
-| `tests/part_b/` | Real B implementation checks using fake A dependencies | B |
-| `tests/integration/` | Real A and B together | Coordinator; assertions are already written |
-| `tests/part2_handoff/` | Fixture/public-interface compatibility checks | Coordinator |
-| `tests/part2/` | Part 2's future algorithm checks | Part 2 group |
-| `tests/support/` | Reusable test helpers and independent expected results | Coordinator |
-
-### Examples, fixtures, tools and generated files
-
-| Location | What to use it for |
-|---|---|
-| `fixtures/support/fixture.hpp` and `fixture.cpp` | Obtain tiny fixed C++ models through the public interfaces |
-| `fixtures/part1_v1/thermostat/` | Read the complete hand-written thermostat JSON/CSV model |
-| `fixtures/part1_v1/nondeterministic_choice/` | Read a tiny model that demonstrates why every successor matters |
-| `examples/part2_fixture_consumer.cpp` | First working C++ example for the Part 2 group to study |
-| `examples/standalone/` | Working example of a separate CMake project using this repo as an SDK |
-| `examples/thermostat.json`, `building-n3.json` | Model settings to read; no general JSON config loader exists yet |
-| `apps/main.cpp` | Future production CLI; it currently encounters unimplemented factories |
-| `schemas/part1-model-v1.schema.json` | Structural rules for the exported manifest |
-| `tools/check_ownership.py` | Check whether your changes stay inside your assigned folders |
-| `tools/check_readiness.py` | Check whether required tests exist and pass with zero skips |
-| `tools/check_fixture_packages.py` | Check the tiny fixture packages' format and consistency |
-| `build/` | Compiler output, executables and test logs; do not edit or commit these |
-| `exports/`, `benchmarks/`, `out/` | Ignored places for generated results; create them when needed |
-
-## 5. Exactly where may each person work?
-
-| Role | Branch | Allowed paths |
-|---|---|---|
-| A | `part-a/discretization` | `include/symctrl/part_a/`, `src/part_a/`, `tests/part_a/`, `docs/part_a/` |
-| B | `part-b/abstraction` | `include/symctrl/part_b/`, `src/part_b/`, `tests/part_b/`, `docs/part_b/` |
-| Part 2 group | A later branch such as `part2/controller` | `include/symctrl/part2/`, `src/part2/`, `tests/part2/`, `docs/part2/` |
-| Coordinator | Shared foundation/integration work | Shared interfaces, root build/docs, fixtures and integration/handoff checks |
-
-Each person can read the whole repository. Their feature changes belong in their assigned four folders. Shared code and examples stay common references.
-
-The root build already includes each owner's local `CMakeLists.txt`. Add new implementation files to `src/part_a/CMakeLists.txt`, `src/part_b/CMakeLists.txt` or `src/part2/CMakeLists.txt`; add tests through the matching local test CMake file. Owners do not need to change the root `CMakeLists.txt` for ordinary source additions.
-
-## 6. Before starting: tools and terminal location
-
-You need Git, a C++17 compiler, CMake version 3.21 or later, and Make for the supplied presets. CTest comes with CMake. Python 3 is used for the optional ownership/readiness scripts, not for the C++ algorithms.
-
-You can check the tools with:
+You need Git, a C++17 compiler, CMake >=3.21 and Make. CTest comes with CMake. Python 3 is only optional developer tooling.
 
 ```sh
 git --version
@@ -195,69 +103,31 @@ ctest --version
 python3 --version
 ```
 
-On the original machine, CMake was temporarily installed under `/tmp` during initialisation. If it still exists, this makes it available in the current terminal:
+The original machine used a temporary CMake installation. If still present, this adds it for your terminal:
 
 ```sh
 export PATH="/tmp/symctrl-cmake/cmake/data/bin:$PATH"
-cmake --version
 ```
 
-That temporary directory may disappear later. In that case, provide a normal CMake installation before building. This temporary-path command is specific to this machine, not a requirement for everyone's computer.
+That path is machine-specific and temporary. Other computers need their own CMake installation. Run commands from the relevant checkout root; use pwd and git branch --show-current to check where you are. Quote paths containing spaces.
 
-Before running project commands, enter the correct checkout folder. `pwd` prints your current folder. The original checkout is:
+## 7. Branches on this computer and another computer
+
+A/B branches already exist locally. Do not run git init again or recreate someone's branch. The original checkout remains on main for coordinated work; each active owner should have a separate folder.
+
+On this computer, the existing B worktree is /home/ilyazz/symctrl-b:
 
 ```sh
 cd "/home/ilyazz/Automate Project"
-pwd
+git worktree list
+cd /home/ilyazz/symctrl-b
 git branch --show-current
 git status --short
 ```
 
-Quotes are needed around that path because it contains a space. When this guide says “run from your checkout root,” it means the folder containing that checkout's `CMakeLists.txt`.
+Expected branch: part-b/abstraction. Open that folder in B's editor. If setting up elsewhere and no B worktree exists, create one from the repository root with `git worktree add ../symctrl-b part-b/abstraction`. If Git says it exists/is in use, inspect git worktree list rather than forcing it.
 
-## 7. How to initialise and open the branches
-
-**A and B's branches already exist locally. Do not run `git init` again or recreate them.** Creating a branch and opening a working folder for it are separate operations.
-
-Choose one setup route below. Use separate folders for separate people or concurrent coding sessions.
-
-### Route A: same computer — use worktrees
-
-From the original checkout, the coordinator runs these once, provided the destination folders do not already exist:
-
-```sh
-cd "/home/ilyazz/Automate Project"
-git branch --list
-git worktree add ../symctrl-a part-a/discretization
-git worktree add ../symctrl-b part-b/abstraction
-```
-
-This produces:
-
-| Folder | Branch | Who uses it? |
-|---|---|---|
-| `/home/ilyazz/Automate Project` | `main` | Shared reference/coordinator |
-| `/home/ilyazz/symctrl-a` | `part-a/discretization` | A |
-| `/home/ilyazz/symctrl-b` | `part-b/abstraction` | B |
-
-A opens `/home/ilyazz/symctrl-a` in their editor and terminal. B opens `/home/ilyazz/symctrl-b`. The files have the same relative names, but the folders contain separate working copies. Each also gets its own `build/dev` when built.
-
-For example, A checks their location with:
-
-```sh
-cd /home/ilyazz/symctrl-a
-git branch --show-current
-```
-
-Expected output: `part-a/discretization`. B does the same in `/home/ilyazz/symctrl-b` and expects `part-b/abstraction`.
-
-If Git says a branch is already checked out in another worktree, run `git worktree list` and use that folder. Do not force the checkout. A worktree folder is not a remote share for someone on another computer.
-
-### Route B: different computers — use separate clones after sharing
-
-The foundation has not been pushed by this session. The following commands work only after the coordinator has deliberately shared the baseline tag and branches at the chosen remote. A remote URL being configured does not mean the new branches are already available there.
-
-After that sharing, A runs on their own computer:
+On another computer, A can clone its branch only after the coordinator has authorised sharing and made it available at the chosen remote:
 
 ```sh
 git clone --branch part-a/discretization https://github.com/AnassFer/Formal-Control-System.git symctrl-a
@@ -265,54 +135,23 @@ cd symctrl-a
 git branch --show-current
 ```
 
-B runs on their own computer:
+Expected branch: part-a/discretization. Open symctrl-a there. Nothing is published merely because a local branch exists. A local bundle transfer is another sharing route; [git-workflow.md](docs/git-workflow.md) explains current/future arrangements. This documentation task performs no push.
 
-```sh
-git clone --branch part-b/abstraction https://github.com/AnassFer/Formal-Control-System.git symctrl-b
-cd symctrl-b
-git branch --show-current
-```
+If a repository has the agreed tag but genuinely lacks local A/B branches, the coordinator can create only the missing names from that tag. Existing branches with commits must be preserved. Do not switch branches in a folder another session is using.
 
-These clones have their own Git history/files and track their respective remote branches. If the remote branch cannot be found, first confirm that it has actually been shared. The coordinator can also transfer a local Git bundle without pushing; the detailed sharing plan belongs in [git-workflow.md](docs/git-workflow.md).
+## 8. A's implementation order
 
-If you already have a clone, check `git status --short` first and keep unfinished edits safe. Once clean, fetch the shared refs with `git fetch origin --tags`. If your local branch exists, use `git switch part-a/discretization` or the B equivalent. If only `origin/part-a/discretization` exists, `git switch --track origin/part-a/discretization` creates its local tracking branch. Use the B name for B. Do not switch branches inside a folder another session is using.
+A's responsibilities/public signatures remain unchanged.
 
-### Only if a branch is genuinely missing: create it from the tag
+| Order | File under src/part_a/ | Task |
+|---|---|---|
+| 1 | uniform_grid.cpp | Generic grid, IDs/indices, geometry, locate and closed intersections |
+| 2 | input_catalog.cpp | Explicit and Cartesian inputs in agreed order |
+| 3 | policy_adapter.cpp | Apply a supplied memoryless/finite-memory policy and return owned input |
 
-This is a recovery/setup explanation, not something to repeat in the current original repo. If the common tag is available and the two local branches do not exist, create them with:
+factories.cpp is reserved coordination space; avoid duplicate definitions. Read tests/part_a/part_a.cpp and shared contracts first. Add optional private headers under include/symctrl/part_a/ and notes/tests in owned trees. Keep dimensions configurable; preserve point ownership, closed geometry, OUT handling, validation and overflow checks. A does not compute physical reachable sets or generate a policy.
 
-```sh
-git branch part-a/discretization part1-contract-v1
-git branch part-b/abstraction part1-contract-v1
-```
-
-These commands create names; they do not switch your current folder. Both start from the agreed tag. Do not recreate branches that already contain someone's work. The setup instructions above then open the branch in a working folder.
-
-## 8. Person A: what to do, in order
-
-**Your code starts in `src/part_a/`. Your main test source is `tests/part_a/part_a.cpp`.** Read the tests and shared interfaces before replacing a stub.
-
-| Order | File to work on | What to implement | What should become possible? |
-|---|---|---|---|
-| 1 | `src/part_a/uniform_grid.cpp` | `makeUniformGrid(...)` and an implementation of `IStateGrid` | Create a grid, convert IDs/indices, obtain closed cell boxes, locate a point and find intersecting cells |
-| 2 | `src/part_a/input_catalog.cpp` | `makeInputCatalog(...)`, `makeCartesianInputs(...)` | Obtain the physical input vector for an action ID, in the agreed order |
-| 3 | `src/part_a/policy_adapter.cpp` | `refineDecision(...)` | Convert a measured state plus supplied policy into an owned physical input and updated memory |
-| Alongside these | `tests/part_a/`, `docs/part_a/` | Extend checks and explain your implementation | Other people can understand and verify A independently |
-
-`src/part_a/factories.cpp` is currently reserved coordination space. The existing factory definitions live in the module files listed above; do not define the same function twice.
-
-Concrete examples of A's responsibilities:
-
-* `locate({18})` on the thermostat grid returns state 1.
-* `locate({19})` returns state 2; internal boundary ownership is exact.
-* `inputs.value(1)` returns the selected physical vector, `[1]` in this example.
-* If a supplied policy chooses action 1 in state 1, the adapter returns that action and its physical vector. The adapter does not decide the policy itself.
-
-Keep grid dimensions general: the building has N coordinates. Follow dimension-0-fastest ordering, validate invalid inputs/IDs and check integer overflow. OUT cannot be given a finite cell box, and the adapter must explicitly reject an outside measured state.
-
-A does not need B to finish first. A does not implement physical dynamics, reachable sets, graph generation or controller synthesis.
-
-From A's checkout root, run:
+From A's checkout root:
 
 ```sh
 cmake --preset dev
@@ -322,32 +161,20 @@ python3 tools/check_readiness.py build/dev --mode a
 python3 tools/check_ownership.py auto
 ```
 
-During early development, A tests may still skip on remaining stubs. A is ready for integration when the A readiness command passes with zero required skips, ownership passes and your implementation notes are saved. B/integration tests can still be pending on A's isolated branch.
+## 9. B's implementation order
 
-## 9. Person B: what to do, in order
+B starts with the general backend, not a named example.
 
-**Your code starts in `src/part_b/`. Your main test source is `tests/part_b/part_b.cpp`.** The tests already use fixed fake grid/input objects so you can work without A's completed code.
+| Order | File under src/part_b/ | Task |
+|---|---|---|
+| 1 | monotone_reachability.cpp | Endpoint enclosure using a supplied model's justified capability |
+| 2 | derivative_reachability.cpp | Full-box absolute-Jacobian enclosure for general dimensions |
+| 3 | factories.cpp | Select backend through makeReachability and retain injected dynamics |
+| 4 | explicit_transition_system.cpp | Owned sparse graph and compact universal successor sets |
+| 5 | model_builder.cpp | Build transitions from public grid/input/enclosure views and assemble bundles |
+| 6 | model_export.cpp | Complete generic file-package export |
 
-| Order | File to work on | What to implement | What should become possible? |
-|---|---|---|---|
-| 1 | `thermostat_dynamics.cpp` | `makeThermostatDynamics()` and `IDynamics` behaviour | Evaluate the thermostat's physical next state and expose justified mathematical capabilities |
-| 2 | `monotone_reachability.cpp`, `derivative_reachability.cpp`, `factories.cpp` | Both `IReachability` backends and `makeReachability(...)` dispatch | Enclose all possible next physical states from a cell and disturbance box |
-| 3 | `ring_building_dynamics.cpp` | `makeRingBuildingDynamics(N)` | Evaluate the fixed periodic building model, with no separate disturbance |
-| 4 | `explicit_transition_system.cpp`, `model_builder.cpp` | Sparse immutable storage, `buildSymbolicModel(...)`, `assembleModelBundle(...)` | Query all successor sets and deliver a complete bundle |
-| 5 | `model_export.cpp` | `exportModelPackage(...)` | Write the complete manifest/cells/inputs/transitions package |
-| Alongside these | `tests/part_b/`, `docs/part_b/` | Extend checks and document numerical assumptions, limits and measurements | B can be verified independently |
-
-All abbreviated filenames in this table are inside `src/part_b/`.
-
-For example, B must enclose the thermostat's next temperatures from the **whole** closed cell [17,19], with the heater ON and outside temperature anywhere in [10,15]. The expected enclosure is [18.9,20.8], which intersects cell closures 1 and 2. The expected successor set is therefore `{1,2}`.
-
-Simulating only 18°C would miss the requirement to cover every starting point in the cell. Both the mathematics and floating-point limitations are explained in [source-map.md](docs/source-map.md).
-
-B's tests obtain fake A views through `fixtures::thermostat()` in `fixtures/support/fixture.hpp`. Read those public views, but do not change shared fixtures to fit your implementation. Production B must not depend on fixture support or on A's private implementation.
-
-Store OUT's successor set as compact `AllStates`. Handle closed-boundary intersections, reject invalid/empty producer results and enforce pair/edge/storage limits. Ordinary `double` arithmetic remains `UncertifiedFloat`; passing tests does not upgrade it to a certified enclosure.
-
-From B's checkout root, run:
+Read tests/part_b/part_b.cpp and the contracts. Test through fake A views and independent generic dynamics, so B need not wait for A. Enclose every state/disturbance in a closed cell, not only its centre. Validate capabilities, dimensions, IDs, boundary intersections, graph ownership and storage budgets. AllStates means every ID 0..M; empty Explicit is invalid producer output, not a safe choice.
 
 ```sh
 cmake --preset dev
@@ -357,17 +184,11 @@ python3 tools/check_readiness.py build/dev --mode b
 python3 tools/check_ownership.py auto
 ```
 
-B is ready when its required tests run without skips, including the fixture-based checks, and ownership passes. A/integration tests can still be pending on B's isolated branch. Start with the tiny examples; the later official building benchmark must retain its fixed model and discretisation.
+The original eight B cases include legacy fixture coverage; extend meaningful generic cases during implementation. No production algorithm is added by this documentation task. See [B's notes](docs/part_b/README.md).
 
-## 10. Part 2: the exact starting point
+## 10. Part 2's starting base
 
-**Start by opening `examples/part2_fixture_consumer.cpp`. Start your own implementation later under `src/part2/`, or in your separate repository.**
-
-The example already shows how to obtain a model and ask questions through the agreed interfaces. It works now, even though all real A/B factories are unfinished.
-
-### First session: run the working example
-
-From a checkout containing the common foundation:
+Read [PART2_HANDOFF.md](PART2_HANDOFF.md). First open examples/part2_fixture_consumer.cpp and learn the ModelBundle/transition/policy views. Run the fixed consumer without A/B libraries:
 
 ```sh
 cmake --preset sdk
@@ -376,187 +197,40 @@ ctest --test-dir build/sdk --output-on-failure --no-tests=error
 ./build/sdk/examples/part2_fixture_consumer
 ```
 
-The `sdk` preset turns off A/B production libraries and the production CLI. The nine foundation/handoff tests should pass without skips. The example prints lines including:
+There are nine passing contract/handoff checks in this mode. They validate fixed data/interfaces, not synthesis algorithms.
 
-```text
-model=thermostat_fixture
-successors(1,0)=explicit: 0 1
-successors(0,0)=all: 0 1 2 3
-fixture only; no generation or synthesis
-```
+A useful generic graph is fixtures::nondeterministicChoice() from fixture.hpp. It has states 1,2,3 and OUT 0. At state 1, action 0 reaches {2,3}, action 1 reaches {2}. For safe={1,2}, action 1 is the manually checked robust choice because 3 is unsafe. The separate specification.json records safe/target sets; this is test data rather than computed synthesis output.
 
-These are selected lines/fields from the output. The complete expected output is in `fixtures/part1_v1/thermostat/expected-output.txt`.
-
-Study these files next, in this order:
-
-1. `fixtures/support/fixture.hpp`: the two ready-to-use fixture-bundle functions.
-2. `include/symctrl/contracts/model_bundle.hpp`: the pieces supplied in a model.
-3. `include/symctrl/contracts/transitions.hpp`: successor queries and utilities.
-4. `fixtures/part1_v1/nondeterministic_choice/specification.json`: a separate task to apply to the example graph.
-5. `include/symctrl/contracts/policy.hpp`: the policy interface to return later.
-6. [part1-to-part2.md](docs/part1-to-part2.md): full semantics and file-format rules.
-
-### What Part 2 receives
-
-The C++ `ModelBundle` contains:
-
-| Member | What Part 2 can ask |
-|---|---|
-| `grid` | What are this state's closed bounds? Which state owns a physical point? |
-| `inputs` | What physical vector does this action ID mean? |
-| `transitions` | What are all possible successors for this state and action? |
-| `metadata` | What model/version/dimensions/counts/provenance/numerical status am I using? |
-
-For example, these are the kinds of queries to learn from the existing consumer:
-
-```cpp
-const auto model = symctrl::fixtures::nondeterministicChoice();
-const auto& successors = model.transitions->successors(1, 0);
-const bool can_reach_state_3 = symctrl::contains(
-    successors, 3, model.metadata.internal_states);
-```
-
-This example requires `fixture.hpp` and linking fixture support, as the existing consumer does. It only queries a model; it does not generate a controller.
-
-### First small problem to understand
-
-In the nondeterministic-choice fixture:
-
-```text
-Safe states:   {1,2}
-Target states: {2}
-
-At state 1:
-  action 0 may go to 2 OR 3
-  action 1 goes to 2
-```
-
-Action 0 can reach unsafe state 3, so the manually checked robust choice at state 1 is action 1. Your future algorithm must account for **every possible successor**, not just find one favourable edge. The model and this safe/target specification are stored separately because the same model can be used for different tasks.
-
-Three details must be understood before implementing algorithms:
-
-* State 0 means OUT and is normally unsafe. A state ID is different from an action ID or a physical input value.
-* `AllStates` means every ID from 0 through M, even though its stored ID vector is empty. Use the provided helpers to interpret it.
-* An empty `Explicit` successor set indicates an incomplete/invalid producer result for these models. Do not count it as a successful action because there is nothing to check.
-
-### Where the group creates its own files
-
-For the same-repository arrangement, the coordinator can later create a separate Part 2 worktree from the tag. This command creates a new branch, unlike the existing A/B worktree commands:
+Part 2 later implements general synthesis against graphs/specifications and returns ISymbolicPolicy. Agree specification/result/factory APIs before adding shared declarations. Future safety/reachability or finite-automaton support must stay model-independent. Use part2 headers/sources/tests/docs and local CMake files. Enable the reserved workspace with:
 
 ```sh
-cd "/home/ilyazz/Automate Project"
-git worktree add -b part2/controller ../symctrl-part2 part1-contract-v1
-cd ../symctrl-part2
 cmake -S . -B build/part2 -DSYMCTRL_BUILD_PRODUCTION=OFF -DSYMCTRL_BUILD_PART2=ON
 cmake --build build/part2 --parallel 2
 ctest --test-dir build/part2 --output-on-failure --no-tests=error
 ```
 
-No Part 2 branch is created merely by reading this guide. Use the command only when starting that group's work; if that branch/worktree already exists, open it instead.
+symctrl_part2_workspace is currently an INTERFACE target; add normal compiled targets when sources are created. No algorithm-readiness suite exists yet. Same/separate repository and file-format routes are in [the quickstart](docs/part2-quickstart.md). The old generated archive has historical guidance; use the current handoff document.
 
-The group adds implementation files inside `src/part2/`, headers inside `include/symctrl/part2/`, tests inside `tests/part2/` and notes inside `docs/part2/`. Names such as `controller.cpp` and `controller_tests.cpp` would be new owner files, not existing completed modules.
+## 11. Understand test results and save work
 
-`src/part2/CMakeLists.txt` currently declares an `INTERFACE` target called `symctrl_part2_workspace`. That target is only a connection point; it compiles no implementation. When actual `.cpp` files are added, the group adds a normal compiled library/executable through that local CMake file and can link it through the workspace target. Its local test CMake file is also ready to extend. Do not put new Part 2 algorithms in the frozen example or shared handoff tests.
+The original full scaffold has 9 passes and 14 skips: 5 A, 8 B and 1 integration. Only NotImplemented permits skipping. CTest's aggregate percentage can include skips; a pending case is not completed work. Readiness must reject skipped/missing/failed/disabled required tests. Current coverage is not a full-paper or robot acceptance suite.
 
-Run `python3 tools/check_ownership.py part2` from that checkout to check path ownership. There is no frozen Part 2 algorithm-readiness suite yet; the group must add its own meaningful tests. The nine existing handoff tests validate the supplied example/API, not the group's future synthesis algorithm.
-
-### If Part 2 uses another repository or language
-
-For C++, open `examples/standalone/` and follow [the separate C++ quickstart](docs/part2-quickstart.md). It demonstrates using this checkout through CMake's `add_subdirectory`, without building A/B.
-
-For another language, begin with the files under `fixtures/part1_v1/`:
-
-| File | Meaning |
-|---|---|
-| `manifest.json` | Version, model parameters, dimensions, domain, counts and meanings of the data |
-| `cells.csv` | Closed bounds of each internal state |
-| `inputs.csv` | Physical input vector for each action ID |
-| `transitions.csv` | Every state/action pair's possible successors |
-| `specification.json` in the choice fixture | Separate safe/target task and a manually checked expectation |
-
-The group can write a loader against these fixed files now; it does not need to wait for B's exporter. Use [the schema](schemas/part1-model-v1.schema.json) and [the handoff rules](docs/part1-to-part2.md), including rejection of missing pairs, bad counts and incompatible versions.
-
-### What Part 2 should eventually deliver
-
-Once the agreed synthesis work is implemented, Part 2 supplies a policy implementing `ISymbolicPolicy` for C++ integration. Its decision operation takes previous memory and current state, then returns updated memory and an action ID. Default initial memory is 0 unless the policy explicitly requires another initial value.
-
-The policy uses the model's existing action mapping. It must report states outside its policy domain explicitly. Person A's adapter handles the later physical-input conversion; Part 2 does not need to recreate B's reachability methods or know its graph storage.
-
-Later replace the fixture bundle with a real Part 1 bundle using the same public interfaces. Rerun compatibility checks and add joint tests: fixture success alone does not prove that the finished physical-control system is correct.
-
-## 11. How to understand test results
-
-At the original foundation, the full default suite has:
-
-| Result | Number | What it means |
-|---|---|---|
-| Passed | 9 | Shared contracts and fixture handoff really execute successfully |
-| Skipped | 14 | Five A cases, eight B cases and one integration case encounter missing implementations |
-| Failed | 0 | No executed check failed in the validated baseline |
-
-CTest may still print “100% tests passed” alongside skips. Always read the skipped-test list. A skip is pending work, not a completed feature.
-
-The readiness scripts distinguish the stages:
-
-| Command | When it should pass |
-|---|---|
-| `python3 tools/check_readiness.py build/dev --mode foundation` | Shared contracts and fixture handoff work; passes at baseline after a full build |
-| `python3 tools/check_readiness.py build/dev --mode a` | A's required tests and contracts pass without skips |
-| `python3 tools/check_readiness.py build/dev --mode b` | B's required tests, contracts and fixture handoff pass without skips |
-| `python3 tools/check_readiness.py build/dev --mode integration` | Contracts, handoff, A, B and real A+B integration all pass without skips |
-
-Run readiness after building, because missing executables are not passing tests. A real test failure should lead to an implementation fix; do not remove the check or convert arbitrary exceptions into skips.
-
-## 12. A simple daily Git routine
-
-Run this from your own feature checkout before editing:
+Build first, run your labelled tests, run ownership, inspect git diff and save meaningful commits in your own branch. For B, for example:
 
 ```sh
 git branch --show-current
 git status --short
+git diff
+git add -- include/symctrl/part_b src/part_b tests/part_b docs/part_b
+git commit -m "Describe the actual B change"
 ```
 
-Confirm your branch, edit your own files, build, run your tests and inspect the diff with `git diff`. The ownership check covers committed changes, staged/unstaged edits and nonignored new files relative to the common tag. It catches shared-file renames too.
+A uses matching part_a paths; Part 2 uses part2. A commit is local. Remote sharing requires a separately authorised push. Shared coordinator Markdown changes do not belong in an owner's feature commit.
 
-When saving an A change, stage only A's paths:
+## 12. Integration and the later robot example
 
-```sh
-git add -- include/symctrl/part_a src/part_a tests/part_a docs/part_a
-git commit -m "Describe the actual A change here"
-```
+When A/B are independently ready, the coordinator normally merges them into a separate integration checkout and runs the required cross-part tests. A clean textual merge alone is insufficient. Part 2 later consumes real bundles through the same boundary and gets joint synthesis/refinement tests.
 
-B uses the matching four `part_b` paths; Part 2 uses `part2`. Replace the sample commit message with a useful description. A commit saves locally; it does not publish anything. Remote sharing is a separate coordinated step, and this documentation task performs no push.
+The mobile robot is then an end-to-end example of the completed general engine. Put its dynamics, parameters, labels and periodic-heading handling in model/example adapters. Do not turn the graph builder or synthesis algorithm into robot-specific code. Nothing in this documentation update implements that example.
 
-Use small meaningful commits while developing. Tell the coordinator that a part is ready only after its readiness and ownership gates pass. If a new shared API is needed, describe the concrete problem and proposed change before building incompatible alternatives.
-
-## 13. Who combines the finished work?
-
-After both A and B are ready, the coordinator creates a separate integration worktree, normally merges both completed branches, and runs the strict integration gate plus the real thermostat demonstration. The integration test already contains the six-row oracle and the cross-part assertions.
-
-Neither student needs to merge the other's unfinished branch to start their own implementation. The coordinator does not assume a merge is correct just because Git reported no text conflicts. Full later commands are in [git-workflow.md](docs/git-workflow.md).
-
-Once the producer is integrated, the Part 2 group can consume its real bundle/package. Joint Part 1/Part 2 algorithm tests happen when both sides exist. A/B/Part 2 feature work belongs on its corresponding branch rather than on `main`.
-
-## 14. If you get stuck
-
-| What you see | What to do |
-|---|---|
-| `cmake: command not found` | Check the tool setup in section 6; the original machine's temporary CMake path is not permanent |
-| `not implemented` or a skipped feature test | Check the relevant owner's remaining stub; this is expected at the starting foundation |
-| Ownership checker fails | Read the listed paths and confirm you are in your feature checkout. Shared coordinator documentation edits do not belong in an owner's feature commit |
-| `auto` cannot detect a work stream on `main` | Open your A/B/Part 2 checkout before running the feature ownership audit |
-| Remote branch not found | Confirm the branch has actually been shared; local branches are not automatically on GitHub |
-| Worktree destination already exists / branch already in use | Run `git worktree list` and inspect the existing folder; do not delete or force it |
-| CMake refers to an old folder/compiler | Use a new build directory for the new checkout/configuration rather than copying another person's build tree |
-| You think a shared contract is wrong or insufficient | Bring the exact failing example and proposed change to the coordinator |
-
-For a deeper explanation, use these documents:
-
-* [Exact public interfaces and conventions](docs/contracts.md)
-* [Detailed finished Part 1 file blueprint](docs/part1-final-structure.md)
-* [Baseline implementation-status list](docs/implementation-status.md)
-* [Mathematics, source scope and thermostat oracle](docs/source-map.md)
-* [Branch, sharing and later merge commands](docs/git-workflow.md)
-* [Part 2 quickstart](docs/part2-quickstart.md)
-* [Part 1 → Part 2 API/file-format agreement](docs/part1-to-part2.md)
-* [What was actually validated during initialisation](docs/bootstrap-validation.md)
+For details use [contracts](docs/contracts.md), [the blueprint](docs/part1-final-structure.md), [status](docs/implementation-status.md), [source map](docs/source-map.md), [Git workflow](docs/git-workflow.md) and [handoff rules](docs/part1-to-part2.md).

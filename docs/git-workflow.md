@@ -1,93 +1,65 @@
-# Local baseline and later collaboration
+# Shared baseline and owner branches
 
-Default branch: `main` (initially unborn). Bootstrap creates one shared scaffold commit using the configured Git identity, lightweight tag `part1-contract-v1` and exactly these feature refs at that same commit: `part-a/discretization`, `part-b/abstraction`. It leaves the checkout on main, starts no feature work, creates no Part 2/integration feature branch and performs no push. Use `git rev-parse part1-contract-v1` for the exact commit; a commit does not embed its own hash in its files.
+The original tag part1-contract-v1 marks commit 25c6fe909cac531c2a3e1d2593cd598ff4522064. It is the initial scaffold, not a completed implementation. Main later received documentation. A/B branches originally started at the tag. This Markdown-only correction changes no refs, worktrees or history and performs no push.
 
 ```sh
 git branch --show-current
 git status --short
+git worktree list
 git rev-parse part1-contract-v1 part-a/discretization part-b/abstraction
 ```
 
-## Start the two owners locally
+## Local worktrees
 
-Run from the shared checkout after bootstrap:
+An existing B worktree is /home/ilyazz/symctrl-b. Inspect/use it rather than recreating it. If an owner branch has no worktree and the destination is absent, setup commands from the original root are:
 
 ```sh
 git worktree add ../symctrl-a part-a/discretization
 git worktree add ../symctrl-b part-b/abstraction
 ```
 
-In separate terminals/sessions:
+Run only the setup actually needed. Each checkout has its own build directory. Do not switch branches inside another active session's folder or force a branch out of its current worktree.
 
-```sh
-cd ../symctrl-a
-cmake --preset dev
-cmake --build build/dev --target part_a_tests --parallel 2
-ctest --test-dir build/dev -L part_a --output-on-failure
-```
+## Sharing and different computers
 
-```sh
-cd ../symctrl-b
-cmake --preset dev
-cmake --build build/dev --target part_b_tests --parallel 2
-ctest --test-dir build/dev -L part_b --output-on-failure
-```
+The configured origin is https://github.com/AnassFer/Formal-Control-System. Local refs are not automatically published. Only after user authorisation and destination/history review, the coordinator can share main, A/B branches and the tag. A local Git bundle is another transfer method. Never force-push to overcome a history disagreement.
 
-Each worktree's build/dev is physically separate. Do not switch a branch inside a checkout used by another session. A worktree is not another developer's remote share. Owners finish the full configure/build for contract prerequisites before running their strict readiness gate.
-
-## Sharing and separate clones (future, not executed)
-
-Existing origin is `https://github.com/AnassFer/Formal-Control-System`. Local creation does not establish remote visibility. Only after separate user authorisation and review of the destination/history, share the baseline and refs:
-
-```sh
-git push origin main part-a/discretization part-b/abstraction
-git push origin part1-contract-v1
-```
-
-Never force-push to overcome history conflicts. If transferring to a different repository, use a clearly supplied URL, e.g. `git remote add shared USER_SUPPLIED_REMOTE_URL`, then explicitly choose that remote after authorisation. No remote is created/changed by bootstrap.
-
-After authorised sharing, students can use separate clones:
+After authorised sharing, A can clone its branch:
 
 ```sh
 git clone --branch part-a/discretization https://github.com/AnassFer/Formal-Control-System.git symctrl-a
-git clone --branch part-b/abstraction https://github.com/AnassFer/Formal-Control-System.git symctrl-b
 ```
 
-These clones track their matching remote branches; each has its own build tree. If remote sharing has not happened, local cloning from `'/home/ilyazz/Automate Project'` is also possible on this machine. Do not claim unpublished local refs can be fetched from GitHub.
+B uses part-b/abstraction if cloning separately. Existing clones fetch available refs/tags before tracking the matching branch. Source archives supply files rather than Git history; ownership comparisons need the agreed Git baseline.
 
-## Ownership and shared changes
+## Ownership and coordinated updates
 
-Before handoff, each owner builds all prerequisites and runs:
+Allowed prefixes are in [ownership.md](ownership.md). Owners change only their four trees, including local CMake/test/docs files. A/B operate through shared public views and remain independently testable.
 
 ```sh
 python3 tools/check_ownership.py auto
 python3 tools/check_readiness.py build/dev --mode a
-# B uses --mode b instead.
 ```
 
-Readiness requires zero owner skips; B uses fake A fixtures and does not merge unfinished A for its isolated tests. Allowed paths are in `ownership.md`. The checker covers changes from the shared tag, staged/unstaged edits and nonignored untracked files, checking both rename paths. A proposed public change first becomes one coordinated common baseline update, with version, docs, schema/fixtures/tests validated. Both owners bring that same update into their branches before dependent work. Record the new comparison ref and use `--base NEW_SHARED_TAG`; never move v1 silently or hide conflicts with ours/merge attributes.
+B uses readiness mode b. Build prerequisites before readiness. Current gates cover the original scaffold, not all future synthesis/example requirements.
 
-## Later integration (documentation only)
+The coordinator makes a shared contract/build/test/documentation update once, validates it and records its comparison ref. Owners incorporate the same approved update before dependent work. Do not silently move the original tag. Use an explicit agreed --base ref for ownership after an updated baseline; do not invent a tag name before it exists. Main's unrelated documentation commits must not be merged into a feature branch solely to silence path errors.
 
-After A and B each pass readiness and ownership, fetch current remote refs if shared. In the coordinator's clean repository, inspect `git branch -a` and use the actual completed refs. For a shared remote, the full workflow is:
+## Later integration, not executed now
+
+After both owners pass their required checks, fetch available current refs if using a remote. Create a clean integration worktree from the agreed baseline and normally merge the actual completed A/B refs, preserving their commits. For local refs and the original baseline, the shape is:
 
 ```sh
-git fetch origin --tags
 git worktree add -b integration/part1 ../symctrl-integration part1-contract-v1
 cd ../symctrl-integration
-git merge --no-ff origin/part-a/discretization
-git merge --no-ff origin/part-b/abstraction
+git merge --no-ff part-a/discretization
+git merge --no-ff part-b/abstraction
 cmake -S . -B build/integration -DCMAKE_BUILD_TYPE=Release
 cmake --build build/integration --parallel 2
 ctest --test-dir build/integration --output-on-failure --no-tests=error
 python3 tools/check_readiness.py build/integration --mode integration
-./build/integration/apps/symctrl_cli thermostat
-./build/integration/apps/symctrl_cli thermostat-policy
-./build/integration/apps/symctrl_cli export-thermostat exports/thermostat
 ```
 
-If development used local worktrees instead, merge the actual local `part-a/discretization` and `part-b/abstraction` refs in the two merge commands, after inspecting their tips. If a coordinated updated baseline exists, create integration from its documented tag. Normal merges preserve both owners' commits. Resolve real source/semantic conflicts; do not weaken shared assertions or suppress conflicts to make a merge appear clean.
+Use origin/branch refs after fetching when those are the authoritative completed branches, or the updated baseline when documented. Resolve source/semantic conflicts without weakening shared assertions or hiding conflicts through ours strategies. Extend acceptance coverage as the general engine grows; the old registry is not full-paper completion.
 
-Only after the small tests and strict gate pass, an optional explicit benchmark is `./build/integration/apps/symctrl_cli building-n3`. Report configuration, numeric status, edge/count/timing/storage limits and failures. Never start with larger-N allocation. External `/usr/bin/time -v` can measure process peak RSS where available; document that this includes setup/export if those are in the same invocation, while graph abstraction_seconds excludes export. Part 2's synthesis time/controllable percentage belongs to its later stage.
-
-Review integration and move it to main only under the user's review workflow; bootstrap does neither. A clean textual merge is not mathematical/API compatibility. The strict zero-skip merged tests and real thermostat demonstration remain mandatory. Later Part 1/Part 2 substitution and joint algorithm checks are documented separately in `part2-quickstart.md`.
+Part 2 later branches from the available common baseline and supplies general synthesis in its reserved subtree. A subsequent robot example validates the reusable pipeline. Runtime/example command names must be implemented and documented through coordinated work rather than assumed to exist now. Review before moving integration to main under the user's workflow.
