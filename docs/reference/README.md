@@ -1,10 +1,10 @@
 # Local source documents
 
-The supplied files remain local, accessible and uncommitted:
+The original supplied PDFs stay local and ignored rather than redistributed:
 
-* `Project files/42717210-s7467 (1).pdf`: Girard, Meyer, Saoud, *Approches symboliques pour le contrôle des systèmes non linéaires*, S7467 V1, 10 September 2024. Canonical requested name: `42717210-s7467.pdf`.
-* `Project files/Symbolic_control_project (1).pdf`: Saoud, *Project – Symbolic Control*, Computation theory, Fall 2026, 24 September 2026. Canonical requested name: `Symbolic_control_project.pdf`.
+* Project files/42717210-s7467 (1).pdf: Girard, Meyer and Saoud, Approches symboliques pour le contrôle des systèmes non linéaires, S7467 V1, 10 September 2024.
+* Project files/Symbolic_control_project (1).pdf: Saoud, Project – Symbolic Control, Computation theory, Fall 2026, 24 September 2026.
 
-Read paper PDF pages 4–7 (printed 3–6) for Section 1, and slides numbered 14–16 for the fixed building model. The introductory slides/thermostat example were also reviewed. Local text extraction can omit equations: inspect the original pages, especially the enclosure and thermostat equations. These PDFs are ignored rather than redistributed. The optional earlier project guide was not supplied.
+Read paper PDF pages 4–7 (printed 3–6) for general abstraction/refinement, pages 8–11 for synthesis and pages 12–13 for the later robot example. Text extraction can omit formulas: inspect original equations/figures when deciding mathematical behaviour. The current template scope follows the latest user directions in [scope-correction.md](../scope-correction.md). Example content does not define the library's generic APIs. The optional earlier guide was not supplied.
 
-The supplied reference is <https://github.com/mokhatiri/symbolic_controller_generator>. Its homepage was consulted, but no reference implementation code was used or copied into this scaffold. The revision quoted by the bootstrap prompt (`f3289a87adaa89192a0d7cceb3b789cf38f03090`) is historical, not independently verified as current main. Any future code comparison must record the actual inspected revision and check boundary, OUT and callback semantics critically. Source authority is the paper, then model-specific slides, not the Python implementation.
+The supplied reference repository is https://github.com/mokhatiri/symbolic_controller_generator. Its homepage was consulted, but no implementation code was copied into the scaffold. The revision quoted by the original prompt is historical, not a verified current main revision. Future comparisons must record the actual inspected revision and critically check callback, boundary, OUT and periodic-angle semantics. The paper is the mathematical authority; the reference implementation is secondary.

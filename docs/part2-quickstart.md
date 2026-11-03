@@ -1,10 +1,10 @@
-# Independent Part 2 quickstart
+# General Part 2 quickstart
 
-Use contract/schema version 1.0.0 at `part1-contract-v1`. The tag/branches are local after initialisation; obtain a clone, local bundle/archive or authorised remote share before asking another machine to fetch them. Nothing was pushed by bootstrap. These instructions consume fixtures and public interfaces only; there is no synthesis implementation to run yet.
+This is a starting base for later model-independent controller synthesis. Read [PART2_HANDOFF.md](../PART2_HANDOFF.md). Part 1 supplies a model through shared views; Part 2 receives a separate specification and returns a policy. The later robot example follows the reusable pipeline. No synthesis algorithm exists yet.
 
-## Get and validate the SDK
+## Obtain and build the base
 
-After authorised sharing, a same-machine local clone or a shared remote works:
+After authorised sharing, clone the common tag from an available local/shared repository. On the original machine a local example is:
 
 ```sh
 git clone --branch part1-contract-v1 '/home/ilyazz/Automate Project' symctrl-sdk
@@ -13,30 +13,32 @@ cmake --preset sdk
 cmake --build build/sdk --parallel 2
 ctest --test-dir build/sdk --output-on-failure --no-tests=error
 ./build/sdk/examples/part2_fixture_consumer
-python3 tools/check_readiness.py build/sdk --mode foundation
 ```
 
-The local clone path is specific to this workspace; on another machine replace it with the shared clone URL or local path you actually received. For the current checkout, start directly at `cmake --preset sdk`. Result: nine contracts/handoff tests pass, zero skips, with no A/B production targets built or linked. The fixture consumer's full expected output is `fixtures/part1_v1/thermostat/expected-output.txt` and the `handoff.consumer` test compares it byte-for-byte. This proves fixture-contract usability, not real Part 1 integration readiness.
+On another machine replace the clone source with the repository/bundle actually shared with you. Nothing has been pushed by this documentation task. The tag contains the original scaffold; current explanatory Markdown may be shared separately until a coordinator update is committed. A source archive contains files but no branch/tag history.
 
-## Same repository arrangement
+The nine existing contract/handoff cases pass without A/B production targets. The consumer queries fixed fixture data and performs no synthesis. This establishes a usable boundary, not completed algorithms.
 
-The group may later create its own branch from the common tag (not created during bootstrap):
+## Same-repository workspace
+
+Once the agreed baseline is available and your current worktree is clean, a group can later create its branch:
 
 ```sh
 git switch -c part2/controller part1-contract-v1
 cmake -S . -B build/part2 -DSYMCTRL_BUILD_PRODUCTION=OFF -DSYMCTRL_BUILD_PART2=ON
 cmake --build build/part2 --parallel 2
 ctest --test-dir build/part2 --output-on-failure --no-tests=error
-python3 tools/check_ownership.py part2
 ```
 
-Only `include/symctrl/part2/`, `src/part2/`, `tests/part2/`, `docs/part2/` are reserved for this group. Local CMakeLists are already included behind `SYMCTRL_BUILD_PART2=ON`; target `symctrl_part2_workspace` currently has no source/algorithm. Add future sources/tests in those local files, not frozen root files. Keep task specifications separate from model metadata.
+Use only include/symctrl/part2/, src/part2/, tests/part2/ and docs/part2/. The root already includes local CMake entry points behind SYMCTRL_BUILD_PART2. symctrl_part2_workspace is an INTERFACE connection point; create a normal compiled target as sources are added. Keep new algorithms/tests out of the shared consumer and fixed handoff tests.
 
-## Separate C++ repository arrangement
+With a valid baseline ref, `python3 tools/check_ownership.py part2` checks path ownership. There is no Part 2 algorithm-readiness suite yet; define meaningful algorithm tests when implementation is authorised. Public specification/result/factory details need coordinated agreement first.
 
-Public handoff contents are `include/symctrl/contracts/`, `src/common/`, `fixtures/support/`, `fixtures/part1_v1/`, `schemas/`, the root CMake support/options and `examples/part2_fixture_consumer.cpp`; retain their common tag/version. Copying only public headers is sufficient for declarations, but calls to representation helpers require `symctrl_common`. Use the shared checkout via add_subdirectory instead of manually copying private producer sources.
+## Separate C++ project
 
-The standalone project under `examples/standalone/` is a tested independent CMake consumer. Copy that directory to your own repository and point `SYMCTRL_SDK_SOURCE` at the common checkout:
+The SDK consists of public contracts, minimal common helpers, fixture support/data, schema, build support and examples. Headers declare operations; link symctrl_common for the completed helpers and symctrl_fixture_support for fixed test models. Private producer classes are not needed.
+
+The standalone client is tested through add_subdirectory:
 
 ```sh
 cmake -S examples/standalone -B build/external -DSYMCTRL_SDK_SOURCE="$PWD"
@@ -44,10 +46,10 @@ cmake --build build/external --target external_fixture_client --parallel 2
 ./build/external/external_fixture_client
 ```
 
-Actual output: `nondeterministic_choice_fixture M=3 unsafe_successor_3=1`. The project disables production/tests/Part 2 in the SDK subtree and links `symctrl_fixture_support`, which transitively supplies common/contracts. It builds no A/B libraries. For a declaration-only dependency, `symctrl_contracts` is an INTERFACE target; `symctrl_common` supplies completed validation and successor operations. There is no install/package manager or network dependency.
+Copy that small client project to your own repository and point SYMCTRL_SDK_SOURCE at the shared checkout. It builds no A/B library. symctrl_contracts is an INTERFACE declaration target, symctrl_common supplies helpers, and fixtures remain a test/example dependency.
 
-## Separate-language arrangement and later substitution
+## File route and future integration
 
-Give the group both complete package directories in `fixtures/part1_v1/`, `schemas/part1-model-v1.schema.json` and `docs/part1-to-part2.md`. The thermostat package covers all six internal transitions and universal OUT rows. The nondeterministic graph has a separate `specification.json` with safe/target sets and the manually checked robust-choice expectation. Implement a loader against these files now; no future exporter is required to obtain them. `python3 tools/check_fixture_packages.py` optionally checks the tiny fixture packages using only the standard library. CSV structural rules and cross-file rejection requirements are in the handoff document.
+Study fixtures/part1_v1/nondeterministic_choice/ and schemas/part1-model-v1.schema.json. The fixed graph is a general nondeterministic example; specification.json separately supplies safe/target sets and a manually checked robust action. No unimplemented exporter is needed to obtain the sample files.
 
-The [final structure](part1-final-structure.md) shows the future producer. Later obtain the integrated Part 1 implementation, rerun unchanged fixture checks, then substitute a validated real ModelBundle from `assembleModelBundle` for `fixtures::thermostat()` without changing consumer-facing APIs. A language-based consumer instead loads a future complete `generated_part1` package with the same schema. Separately supply safe/target/label/specification data, and return an `ISymbolicPolicy` using the exact action mapping and initial-memory convention from contracts.md. Joint Part 1/Part 2 tests become mandatory once both algorithms exist; successful fixture tests alone do not establish full-system correctness.
+[part1-to-part2.md](part1-to-part2.md) specifies IDs, universal/empty semantics, CSV ordering/count validation and versions. Later load a real generic package or replace the fixture bundle with a real ModelBundle. The policy boundary stays ISymbolicPolicy. Rerun unchanged fixture checks and add joint synthesis/refinement tests. Fixed-fixture success alone cannot prove a completed general or physical controller.

@@ -1,22 +1,26 @@
 # Repository instructions
 
-This is the foundation-only baseline for the symbolic-control project. Initial bootstrap may create contracts, representation/validation helpers, fixtures, throwing stubs, tests and documentation on `main`, then commit/tag and create the two refs. It must stop there. No production A/B algorithm or Part 2 synthesis is authorised by bootstrap.
-
 ## Scope and authority
 
-Read `docs/source-map.md` and the supplied PDFs before mathematical changes. Paper S7467 Section 1, through Section 1.2 (printed page 6 / PDF page 7), defines Part 1. Slides 14–16 define the fixed ring-building model and competition; synthesis is a later milestone. The earlier guide/reference Python code is secondary. No ODE integration or robot-angle dependency belongs in the baseline.
+Follow the latest user instruction and `docs/scope-correction.md`: keep the paper implementation general, prepare paper Part 1 and a base for Part 2, and add a mobile-robot example only after the reusable pipeline is ready. Development A/B are ownership tracks within Part 1. Do not infer different course ownership from an article section number.
 
-## Work stream and ownership
+Paper Section 1 defines general abstraction/refinement; Section 2 defines general synthesis; Section 3 supplies a later example. Read `docs/source-map.md` and supplied documents before mathematical changes. The original bootstrap prompt is historical; later explicit user directions take precedence. The current request is **documentation only**. Do not implement algorithms or change production C++, contracts, schemas, CMake, tests or readiness tooling in this revision.
 
-Run `git branch --show-current` and `git status --short` first. `part-a/discretization` edits only `include/symctrl/part_a/**`, `src/part_a/**`, `tests/part_a/**`, `docs/part_a/**`. `part-b/abstraction` edits only the four matching `part_b` trees. A later `part2/*` branch edits only the four matching `part2` trees. `main` contains coordinated shared foundations; never do feature implementation there. Preserve unrelated changes. Do not create another repository, discard work, rewrite history or hide conflicts.
+## Work streams and ownership
 
-All other tracked paths are frozen, including contracts, common code, fixtures, CLI, integration tests, root build and docs, schemas and tools. See `docs/ownership.md`. Owners extend their local CMakeLists; do not modify shared root files to add sources/tests. Shared headers include no private A/B headers. A and B depend on contracts/common, never on one another. Test-only fixture support is never linked by production targets.
+Run `git branch --show-current` and `git status --short` first. Preserve unrelated changes. Main holds coordinated docs/contracts/build updates; feature implementation belongs on its owner branch.
 
-If a public contract is insufficient, describe the concrete problem and proposed signature/semantic change. A coordinator makes and validates one common versioned baseline update, then both owners incorporate it before dependent work. Do not change shared tests to fit faulty implementations or invent incompatible adapters. The comparison tag for an approved update must be documented explicitly.
+* `part-a/discretization`: only include/symctrl/part_a/**, src/part_a/**, tests/part_a/**, docs/part_a/**. Owns general grids, inputs and applying a supplied policy with memory. Responsibilities/signatures unchanged.
+* `part-b/abstraction`: only the four corresponding part_b trees. Owns general dynamics/enclosure integration, transition construction/storage/query/export and immutable model bundles. Model implementations are supplied through interfaces; examples do not define the engine.
+* A later `part2/*` stream: only the four corresponding part2 trees. Provides general symbolic-controller synthesis on the shared model/specification/policy boundary. It is currently a reserved base, not an implementation.
+
+Shared paths include contracts/common, root build/docs, fixtures, schemas, CLI, tools and common tests. The user authorises the current coordinator Markdown correction. Feature owners add sources/tests through local CMake files rather than root edits. Shared headers include no private owner headers. Production targets do not link fixture implementations. Keep A and B independently testable through public views.
+
+If a public contract is insufficient, describe the concrete failing use case, exact proposed change/version impact and affected tests. Validate one common update for all consumers. Do not independently alter shared interfaces, weaken tests or hide incompatible behaviour with adapters. Current v1 signatures/schema and historical tags remain unchanged until a coordinated code update.
 
 ## Build and verification
 
-Requires C++17, CMake >=3.21 and a C++ compiler; core build/CTest are offline and need no Python.
+Requires C++17, CMake >=3.21 and a compiler; ordinary C++ build/CTest needs no network or Python.
 
 ```sh
 cmake --preset dev
@@ -33,12 +37,14 @@ python3 tools/check_readiness.py build/dev --mode integration
 python3 tools/check_ownership.py auto
 ```
 
-Python scripts are optional developer gates, not runtime/build dependencies. Readiness must reject missing, disabled, failed and skipped required tests. Only dedicated `symctrl::NotImplemented` permits feature skip code 77. The frozen required-test registry is a minimum; newly added tests with a selected label must also pass. Bootstrap has 9 passing foundation/handoff tests and 14 expected feature skips. Do not implement features to eliminate bootstrap skips. A/B/integration readiness intentionally fails at baseline.
+These existing checks cover the original scaffold and fixtures, not a complete general controller. The original foundation had 9 passes and 14 feature skips. Only NotImplemented permits skip code 77. Required readiness rejects missing, disabled, failed or skipped tests and zero-test runs. Generic synthesis and later example acceptance coverage remain to be added. Python gates are optional developer tools.
 
 ## Mathematical and numerical conventions
 
-Namespace `symctrl`; dimensions are runtime values. Internal IDs `1..M`, OUT `0`, actions `0..A-1`. Dimension 0 varies fastest. Point ownership is half-open except the last interval's outer endpoint; closed cell geometry is used for enclosures/intersections. OUT has no finite cell box and has universal successors. An enclosure touching the outer domain boundary includes OUT under the closure convention. Reject nonfinite coordinates, invalid shapes/IDs and overflow before allocation. Empty disturbance boxes/vectors are permitted only for dimension-zero disturbances. `AllStates` stores no IDs but means `0..M`; an empty Explicit set is incomplete/invalid producer output, never a safe action. All selected actions are enabled everywhere for supplied models.
+Namespace symctrl; runtime dimensions; internal IDs 1..M, OUT 0, actions 0..A-1. Dimension 0 varies fastest. Point ownership is half-open except the last upper endpoint. Geometry/intersections use closed boxes. OUT has no finite bounds and universal successors. Outer-boundary enclosure contact includes OUT under the current closure convention. Reject nonfinite values, invalid dimensions/IDs and overflow before allocation. Empty boxes/vectors describe only zero-dimensional disturbances.
 
-Enclosures cover all starting states in a cell and disturbances in W. Cooperative monotonicity needs a documented analytic justification. Derivative bounds are nonnegative absolute-Jacobian bounds over the whole requested box, with row-major shapes n×n and n×q. No centre-only fallback or signed radius. Ordinary double arithmetic is `UncertifiedFloat`, even when tests pass. See `docs/contracts.md` for exceptions, ownership and exact signatures.
+AllStates has empty storage but means every ID 0..M. Empty Explicit results cannot create vacuous successful control choices. Current complete models enable all selected actions in all states. Later robust synthesis must account for every successor and receive its specification separately.
 
-Keep source PDFs local and ignored; generated trees, exports and benchmarks are ignored. Do not add synthesis or run large benchmarks during bootstrap. Do not push unless separately authorised by the user. No extra agents during initialisation.
+Enclosures cover every cell point and disturbance. Monotonicity needs analytic justification; derivative bounds are nonnegative absolute bounds over the whole box, shaped n×n and n×q. Unsupported capabilities fail explicitly. A later periodic-heading example needs sound interval/topology handling; wrapping only a centre is insufficient. Ordinary doubles remain UncertifiedFloat; tests do not certify physical guarantees.
+
+Keep source PDFs and the original prompt as local historical inputs, generated output out of Git and unrelated work intact. No nested repository, destructive Git operation, history rewrite or silent tag move. Do not push without user authorisation. Do not spawn extra agents unless explicitly authorised. No large benchmarks during documentation work.
