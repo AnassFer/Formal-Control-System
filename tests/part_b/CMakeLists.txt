@@ -27,3 +27,9 @@ target_link_libraries(model_builder_tests PRIVATE symctrl_part_b symctrl_test_su
 foreach(case IN ITEMS graph boundaries invalid_views invalid_enclosures invalid_hits limits lifetime bundle)
     symctrl_test(part_b.model_builder.${case} model_builder_tests ${case} part_b FALSE)
 endforeach()
+
+add_executable(model_export_tests model_export.cpp)
+target_link_libraries(model_export_tests PRIVATE symctrl_part_b symctrl_fixture_support symctrl_test_support)
+foreach(case IN ITEMS fixture generic strings_precision limits invalid_views invalid_strings io_replacement)
+    symctrl_test(part_b.model_export.${case} model_export_tests ${case} part_b FALSE)
+endforeach()
