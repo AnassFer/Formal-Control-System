@@ -21,3 +21,9 @@ target_link_libraries(derivative_reachability_tests PRIVATE symctrl_part_b symct
 foreach(case IN ITEMS affine no_disturbance full_box invalid_requests invalid_bounds invalid_outputs factory lifetime extremes overflow exceptions)
     symctrl_test(part_b.derivative.${case} derivative_reachability_tests ${case} part_b FALSE)
 endforeach()
+
+add_executable(model_builder_tests model_builder.cpp)
+target_link_libraries(model_builder_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS graph boundaries invalid_views invalid_enclosures invalid_hits limits lifetime bundle)
+    symctrl_test(part_b.model_builder.${case} model_builder_tests ${case} part_b FALSE)
+endforeach()
