@@ -3,3 +3,9 @@ target_link_libraries(part_b_tests PRIVATE symctrl_part_b symctrl_fixture_suppor
 foreach(case IN ITEMS thermostat affine capabilities graph boundaries limits building export)
     symctrl_test(part_b.${case} part_b_tests ${case} part_b TRUE)
 endforeach()
+
+add_executable(monotone_reachability_tests monotone_reachability.cpp)
+target_link_libraries(monotone_reachability_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS affine no_disturbance point_boxes capabilities invalid_requests invalid_outputs factory lifetime exceptions)
+    symctrl_test(part_b.monotone.${case} monotone_reachability_tests ${case} part_b FALSE)
+endforeach()
