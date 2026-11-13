@@ -21,6 +21,6 @@ std::shared_ptr<const IReachability> makeReachability(std::shared_ptr<const IDyn
 
     if (method == ReachabilityMethod::CooperativeMonotone)
         return detail::makeMonotoneReachability(std::move(dynamics));
-    throw NotImplemented("Part B bounded-derivative reachability");
+    return detail::makeDerivativeReachability(std::move(dynamics));
 }
 }

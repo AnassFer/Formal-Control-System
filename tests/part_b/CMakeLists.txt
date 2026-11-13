@@ -15,3 +15,9 @@ target_link_libraries(monotone_reachability_tests PRIVATE symctrl_part_b symctrl
 foreach(case IN ITEMS affine no_disturbance point_boxes capabilities invalid_requests invalid_outputs factory lifetime exceptions)
     symctrl_test(part_b.monotone.${case} monotone_reachability_tests ${case} part_b FALSE)
 endforeach()
+
+add_executable(derivative_reachability_tests derivative_reachability.cpp)
+target_link_libraries(derivative_reachability_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS affine no_disturbance full_box invalid_requests invalid_bounds invalid_outputs factory lifetime extremes overflow exceptions)
+    symctrl_test(part_b.derivative.${case} derivative_reachability_tests ${case} part_b FALSE)
+endforeach()
