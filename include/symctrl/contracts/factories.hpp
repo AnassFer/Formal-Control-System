@@ -1,5 +1,5 @@
 #pragma once
-#include "symctrl/contracts/dynamics.hpp"
+#include "include/symctrl/contracts/dynamics.hpp"
 #include "symctrl/contracts/model_bundle.hpp"
 #include "symctrl/contracts/policy.hpp"
 #include "symctrl/contracts/reachability.hpp"
