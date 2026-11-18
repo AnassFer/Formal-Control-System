@@ -3,3 +3,33 @@ target_link_libraries(part_b_tests PRIVATE symctrl_part_b symctrl_fixture_suppor
 foreach(case IN ITEMS thermostat affine capabilities graph boundaries limits building export)
     symctrl_test(part_b.${case} part_b_tests ${case} part_b TRUE)
 endforeach()
+
+add_executable(dynamics_tests dynamics.cpp)
+target_link_libraries(dynamics_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS equations bounds invalid extremes)
+    symctrl_test(part_b.dynamics.${case} dynamics_tests ${case} part_b FALSE)
+endforeach()
+
+add_executable(monotone_reachability_tests monotone_reachability.cpp)
+target_link_libraries(monotone_reachability_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS affine no_disturbance point_boxes capabilities invalid_requests invalid_outputs factory lifetime exceptions)
+    symctrl_test(part_b.monotone.${case} monotone_reachability_tests ${case} part_b FALSE)
+endforeach()
+
+add_executable(derivative_reachability_tests derivative_reachability.cpp)
+target_link_libraries(derivative_reachability_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS affine no_disturbance full_box invalid_requests invalid_bounds invalid_outputs factory lifetime extremes overflow exceptions)
+    symctrl_test(part_b.derivative.${case} derivative_reachability_tests ${case} part_b FALSE)
+endforeach()
+
+add_executable(model_builder_tests model_builder.cpp)
+target_link_libraries(model_builder_tests PRIVATE symctrl_part_b symctrl_test_support)
+foreach(case IN ITEMS graph boundaries invalid_views invalid_enclosures invalid_hits limits lifetime bundle)
+    symctrl_test(part_b.model_builder.${case} model_builder_tests ${case} part_b FALSE)
+endforeach()
+
+add_executable(model_export_tests model_export.cpp)
+target_link_libraries(model_export_tests PRIVATE symctrl_part_b symctrl_fixture_support symctrl_test_support)
+foreach(case IN ITEMS fixture generic strings_precision limits invalid_views invalid_strings io_replacement)
+    symctrl_test(part_b.model_export.${case} model_export_tests ${case} part_b FALSE)
+endforeach()
