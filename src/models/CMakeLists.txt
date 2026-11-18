@@ -1,0 +1,2 @@
+add_library(symctrl_models thermostat_dynamics.cpp ring_building_dynamics.cpp)
+target_link_libraries(symctrl_models PUBLIC symctrl_common PRIVATE symctrl_warnings)

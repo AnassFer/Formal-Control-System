@@ -1,2 +1,2 @@
-add_library(symctrl_common validation.cpp successors.cpp model_bundle.cpp)
+add_library(symctrl_common value_validation.cpp successor_sets.cpp model_bundle_validation.cpp)
 target_link_libraries(symctrl_common PUBLIC symctrl_contracts PRIVATE symctrl_warnings)

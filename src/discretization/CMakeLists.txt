@@ -1,0 +1,2 @@
+add_library(symctrl_discretization uniform_grid.cpp input_catalog.cpp policy_refinement.cpp)
+target_link_libraries(symctrl_discretization PUBLIC symctrl_common PRIVATE symctrl_warnings)

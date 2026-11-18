@@ -1,0 +1,3 @@
+add_library(symctrl_abstraction reachability_factory.cpp monotone_reachability.cpp
+    derivative_reachability.cpp transition_storage.cpp model_builder.cpp model_export.cpp)
+target_link_libraries(symctrl_abstraction PUBLIC symctrl_common PRIVATE symctrl_warnings)

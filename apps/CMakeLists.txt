@@ -1,2 +1,0 @@
-add_executable(symctrl_cli main.cpp)
-target_link_libraries(symctrl_cli PRIVATE symctrl_part_a symctrl_part_b symctrl_warnings)
