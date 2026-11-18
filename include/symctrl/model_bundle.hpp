@@ -27,5 +27,9 @@ struct ModelBundle {
     ModelMetadata metadata;
 };
 // Trivial handle/metadata consistency only, not an exhaustive graph certification.
+// Input: bundle: immutable grid/input/graph handles and metadata describing the same model.
+// Output: No return value; checks handle/metadata consistency without changing the bundle or certifying every
+//         graph row.
+// Throws: std::invalid_argument for inconsistent data; checked-count overflow errors may propagate.
 void validateBundle(const ModelBundle& bundle);
 }

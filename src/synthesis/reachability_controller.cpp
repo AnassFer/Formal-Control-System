@@ -5,6 +5,10 @@
 
 namespace symctrl::part2 {
 
+// Input: model: transition graph; targetStates: valid internal target IDs.
+// Output: ReachabilityResult with winning domain and iteration ranks; target rank is 0 and newly forced
+//         predecessors get increasing ranks.
+// Throws: std::out_of_range for invalid targets; rank overflow or graph errors propagate.
 ReachabilityResult computeReachabilityDomain(const ITransitionSystem& model,
                                             const StateSet& targetStates) {
     ReachabilityResult result;
@@ -44,6 +48,10 @@ ReachabilityResult computeReachabilityDomain(const ITransitionSystem& model,
     }
 }
 
+// Input: model: matching graph; result: winning domain and rank map from reachability synthesis.
+// Output: Map of inputs whose successors all have smaller ranks; rank-0 states have empty lists because the
+//         target is reached.
+// Throws: Invalid IDs, inconsistent rank mappings, missing progress inputs or graph errors.
 ReachabilityController buildReachabilityController(const ITransitionSystem& model,
                                                   const ReachabilityResult& result) {
     if (result.domain.size() != result.ranks.size()) {

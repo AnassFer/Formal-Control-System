@@ -7,6 +7,10 @@
 namespace symctrl::part2 {
 namespace {
 
+// Input: labels: system-state-to-label map; states: internal count M; labelCount: number of automaton labels.
+// Output: No return value; requires exactly one in-range label for every internal system state and leaves
+//         labels unchanged.
+// Throws: std::invalid_argument for missing coverage; std::out_of_range for invalid state/label IDs.
 void validateLabels(const StateLabels& labels, StateId states, std::size_t labelCount) {
     if (labels.size() != checkedSize(states)) {
         throw std::invalid_argument("labels do not cover all system states");
@@ -29,16 +33,31 @@ class ProductTransitionSystem final : public ITransitionSystem {
     const BuildStatistics statistics_;
 
 public:
+    // Input: states/inputs: counts; guarantee: numerical status; rows: prepared successor data; statistics:
+    //        build totals.
+    // Output: Constructs an immutable graph owning its rows and statistics; no return value. Caller supplies
+    //         valid prepared data.
     ProductTransitionSystem(StateId states, InputId inputs, NumericGuarantee guarantee,
                             std::vector<SuccessorSet> rows, BuildStatistics statistics)
         : states_(states), inputs_(inputs), guarantee_(guarantee),
           rows_(std::move(rows)), statistics_(statistics) {}
 
+    // Input: None; reads this transition graph.
+    // Output: Number M of internal states, excluding OUT.
     StateId internalStateCount() const noexcept override { return states_; }
+    // Input: None; reads this transition graph.
+    // Output: Number A of actions, indexed 0..A-1.
     InputId inputCount() const noexcept override { return inputs_; }
+    // Input: None; reads this transition graph.
+    // Output: Numerical-guarantee enum inherited from the source abstraction.
     NumericGuarantee numericGuarantee() const noexcept override { return guarantee_; }
+    // Input: None; reads this transition graph.
+    // Output: Read-only construction statistics, valid for the graph lifetime.
     const BuildStatistics& statistics() const noexcept override { return statistics_; }
 
+    // Input: state: ID in 0..M, including OUT; input: action ID in 0..A-1.
+    // Output: Read-only successor row, explicit or AllStates, valid for the graph lifetime.
+    // Throws: std::out_of_range for invalid state/action IDs.
     const SuccessorSet& successors(StateId state, InputId input) const override {
         if (state > states_ || input >= inputs_) {
             throw std::out_of_range("product state or input out of range");
@@ -50,6 +69,10 @@ public:
 
 }
 
+// Input: systemStates: positive internal system-state count M; automatonStates: positive automaton-state
+//        count Q.
+// Output: Checked internal product count M * Q, with space for OUT also checked.
+// Throws: std::invalid_argument for zero counts; std::overflow_error for count/container overflow.
 StateId productStateCount(StateId systemStates, std::size_t automatonStates) {
     if (systemStates == 0 || automatonStates == 0) {
         throw std::invalid_argument("system and automaton must have states");
@@ -60,6 +83,9 @@ StateId productStateCount(StateId systemStates, std::size_t automatonStates) {
     return count;
 }
 
+// Input: state: system ID in 1..M; automatonState: q in 0..Q-1; systemStates/automatonStates: M/Q.
+// Output: Product ID state + M*q in 1..M*Q; OUT is not encodable as a pair.
+// Throws: Invalid-count/overflow errors or std::out_of_range for invalid component IDs.
 StateId encodeProductState(StateId state, AutomatonStateId automatonState,
                            StateId systemStates, std::size_t automatonStates) {
     productStateCount(systemStates, automatonStates);
@@ -74,6 +100,9 @@ StateId encodeProductState(StateId state, AutomatonStateId automatonState,
     return checkedAdd(state, checkedMultiply(systemStates, automatonState));
 }
 
+// Input: state: product ID in 1..M*Q; systemStates/automatonStates: positive M/Q.
+// Output: ProductState containing the original internal system ID and zero-based automaton ID.
+// Throws: Invalid-count/overflow errors or std::out_of_range for OUT/invalid product IDs.
 ProductState decodeProductState(StateId state, StateId systemStates,
                                 std::size_t automatonStates) {
     const auto count = productStateCount(systemStates, automatonStates);
@@ -86,6 +115,11 @@ ProductState decodeProductState(StateId state, StateId systemStates,
     return ProductState{index % systemStates + 1, checkedSize(index / systemStates)};
 }
 
+// Input: model: system graph; automaton: task; labels: one label per internal system state; options: graph
+//        budgets.
+// Output: Shared immutable product graph; successor labels update task memory, and system OUT maps to product
+//         OUT.
+// Throws: Automaton/label/graph validation, storage-budget, checked-count or allocation errors.
 std::shared_ptr<const ITransitionSystem> buildProductModel(
     const ITransitionSystem& model, const Automaton& automaton,
     const StateLabels& labels, BuildOptions options) {
@@ -155,6 +189,9 @@ std::shared_ptr<const ITransitionSystem> buildProductModel(
             if (bytes > options.max_estimated_bytes) {
                 throw std::length_error("product byte budget exceeded");
             }
+            // Input: Callback receives next: a system successor ID; captures the current pair, automaton,
+            //        labels and ids.
+            // Output: No callback return value; appends OUT or the encoded successor/task-memory pair to ids.
             forEachSuccessor(successors, states, [&](StateId next) {
                 if (next == kOutside) {
                     ids.push_back(kOutside);
@@ -177,6 +214,9 @@ std::shared_ptr<const ITransitionSystem> buildProductModel(
                                                     std::move(rows), statistics);
 }
 
+// Input: systemStates: positive internal system count M; automaton: validated task description.
+// Output: All encoded pairs whose automaton component is final; may be empty; OUT is excluded.
+// Throws: Automaton validation, count overflow or target-container length errors.
 StateSet buildProductTarget(StateId systemStates, const Automaton& automaton) {
     validateAutomaton(automaton);
     const auto automatonStates = automaton.transitions.size();
@@ -197,6 +237,10 @@ StateSet buildProductTarget(StateId systemStates, const Automaton& automaton) {
     return target;
 }
 
+// Input: systemStates: M; automaton: task; labels: complete state labels; winningDomain: internal winning
+//        product IDs.
+// Output: System IDs whose product pair is winning after consuming the initial physical-state label.
+// Throws: Invalid counts, automaton/labels or winning product IDs; checked-count errors propagate.
 StateSet computeWinningInitialStates(StateId systemStates, const Automaton& automaton,
                                      const StateLabels& labels, const StateSet& winningDomain) {
     validateAutomaton(automaton);

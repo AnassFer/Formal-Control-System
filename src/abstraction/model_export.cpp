@@ -16,6 +16,9 @@ namespace {
 namespace fs = std::filesystem;
 constexpr std::array<const char*,4> filenames{{"manifest.json", "cells.csv", "inputs.csv", "transitions.csv"}};
 
+// Input: value: metadata string bytes.
+// Output: No return value; confirms well-formed UTF-8 without changing the string.
+// Throws: std::invalid_argument for invalid, truncated, overlong or out-of-range UTF-8 sequences.
 void validateUtf8(const std::string& value) {
     std::size_t i = 0;
     while (i < value.size()) {
@@ -39,6 +42,9 @@ void validateUtf8(const std::string& value) {
     }
 }
 
+// Input: out: destination stream; value: string to encode.
+// Output: No return value; appends a quoted JSON string with required character escaping to out.
+// Throws: Enabled stream write exceptions propagate.
 void quoted(std::ostream& out, const std::string& value) {
     constexpr char hex[] = "0123456789abcdef";
     out << '"';
@@ -51,6 +57,9 @@ void quoted(std::ostream& out, const std::string& value) {
     out << '"';
 }
 
+// Input: out: destination stream; values: iterable numeric sequence.
+// Output: No return value; appends a JSON array to out.
+// Throws: Enabled stream write exceptions propagate.
 template<class Values> void array(std::ostream& out, const Values& values) {
     out << '[';
     bool first = true;
@@ -62,11 +71,17 @@ template<class Values> void array(std::ostream& out, const Values& values) {
     out << ']';
 }
 
+// Input: out: destination stream; value: box with lower/upper vectors.
+// Output: No return value; appends a JSON object containing lo and hi arrays to out.
+// Throws: Enabled stream write exceptions propagate.
 void box(std::ostream& out, const Box& value) {
     out << "{\"lo\":"; array(out, value.lo);
     out << ",\"hi\":"; array(out, value.hi); out << '}';
 }
 
+// Input: out: destination stream; m: validated model metadata.
+// Output: No return value; appends the complete manifest JSON document to out.
+// Throws: Enum conversion or stream write errors propagate.
 void manifest(std::ostream& out, const ModelMetadata& m) {
     out << "{\n  \"schema_version\": "; quoted(out, m.schema_version);
     out << ",\n  \"contract_version\": "; quoted(out, m.contract_version);
@@ -98,6 +113,9 @@ void manifest(std::ostream& out, const ModelMetadata& m) {
            "\"transitions\":\"transitions.csv\"}\n}\n";
 }
 
+// Input: grid: source geometry; id: internal state ID; m: matching model metadata.
+// Output: No return value; checks index round trips, domain containment and uniform-grid boundary agreement.
+// Throws: std::invalid_argument for inconsistent geometry/indices; grid query errors propagate.
 void validateCell(const IStateGrid& grid, StateId id, const ModelMetadata& m) {
     const auto cell = grid.cellBounds(id);
     validateBox(cell);
@@ -121,6 +139,9 @@ void validateCell(const IStateGrid& grid, StateId id, const ModelMetadata& m) {
         // Check the ideal uniform boundary while allowing rounding in subtraction, division,
         // multiplication and addition at the domain's scale. This changes neither the returned
         // geometry nor point ownership, and avoids requiring one A-specific evaluation order.
+        // Input: actual: cell boundary; boundary: integer grid boundary index; captures lo, hi, count and
+        //        ulp.
+        // Output: True when actual lies within four scale ULPs of the ideal uniform-grid boundary.
         const auto matchesBoundary = [&](double actual, std::uint64_t boundary) {
             const auto ideal = static_cast<long double>(lo)
                 + (static_cast<long double>(hi) - static_cast<long double>(lo))
@@ -134,6 +155,9 @@ void validateCell(const IStateGrid& grid, StateId id, const ModelMetadata& m) {
     }
 }
 
+// Input: bundle: model views and metadata; options: emitted transition-row limit.
+// Output: No return value; validates all export data and budgets before destination files are touched.
+// Throws: Invalid model/UTF-8/graph errors, budget std::length_error or checked-count overflow.
 void preflight(const ModelBundle& bundle, ExportOptions options) {
     validateBundle(bundle);
     const auto& m = bundle.metadata;
@@ -159,6 +183,10 @@ void preflight(const ModelBundle& bundle, ExportOptions options) {
     }
 }
 
+// Input: path: output filename; writer: callback accepting std::ostream&.
+// Output: No return value; creates/truncates path, calls writer with round-trip numeric formatting, and
+//         closes the stream.
+// Throws: Stream/file errors and writer exceptions propagate; a failed staged file may remain for cleanup.
 template<class Writer> void writeFile(const fs::path& path, Writer writer) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out.exceptions(std::ios::badbit | std::ios::failbit);
@@ -173,6 +201,9 @@ public:
     fs::path path;
     bool preserve = false;
 
+    // Input: parent: existing export directory.
+    // Output: Constructs a staging object and creates a unique child directory at path; no return value.
+    // Throws: Filesystem errors or std::runtime_error after repeated unique-name failures.
     explicit StagingDirectory(const fs::path& parent) {
         static std::atomic<std::uint64_t> sequence{0};
         for (unsigned attempt = 0; attempt < 32; ++attempt) {
@@ -182,11 +213,18 @@ public:
         }
         throw std::runtime_error("cannot create unique export staging directory");
     }
+    // Input: None; reads this staging object and its preserve flag.
+    // Output: No return value; attempts recursive cleanup of path unless preserve is true; cleanup errors are
+    //         ignored.
     ~StagingDirectory() {
         if (!preserve) { std::error_code ignored; fs::remove_all(path, ignored); }
     }
 };
 
+// Input: staging: directory containing the four new files; directory: final package destination.
+// Output: No return value; replaces the package, publishes the manifest last, and attempts restoration on
+//         failure.
+// Throws: Publication filesystem errors; nested std::runtime_error and preserved backups if rollback fails.
 void publish(StagingDirectory& staging, const fs::path& directory) {
     std::array<bool,4> backedUp{}, installed{};
     try {
@@ -228,6 +266,12 @@ void publish(StagingDirectory& staging, const fs::path& directory) {
 }
 }
 
+// Input: bundle: complete consistent model; directory: export destination; options: maximum emitted
+//        transition rows.
+// Output: No return value; writes/replaces manifest.json, cells.csv, inputs.csv and transitions.csv using
+//         staged publication.
+// Throws: Validation, row-budget or filesystem errors; publication attempts rollback and retains backups if
+//         rollback fails.
 void exportModelPackage(const ModelBundle& bundle, const std::filesystem::path& directory, ExportOptions options) {
     if (directory.empty()) throw std::invalid_argument("empty export directory");
     preflight(bundle, options); // Model and row-budget failures do not touch the destination.
@@ -241,7 +285,13 @@ void exportModelPackage(const ModelBundle& bundle, const std::filesystem::path& 
     }
     StagingDirectory staging(directory);
     const auto& m = bundle.metadata;
+    // Input: Callback receives out: configured output stream; captures validated metadata m.
+    // Output: No callback return value; appends the manifest JSON document to out.
+    // Throws: Enabled stream errors and model-query exceptions propagate to writeFile.
     writeFile(staging.path / "manifest.json", [&](std::ostream& out) { manifest(out, m); });
+    // Input: Callback receives out: configured output stream; captures the validated bundle and metadata.
+    // Output: No callback return value; appends the cells CSV header and all internal cell bounds to out.
+    // Throws: Enabled stream errors and model-query exceptions propagate to writeFile.
     writeFile(staging.path / "cells.csv", [&](std::ostream& out) {
         out << "state_id";
         for (std::size_t d = 0; d < m.state_dimension; ++d) out << ",lower_" << d;
@@ -255,6 +305,9 @@ void exportModelPackage(const ModelBundle& bundle, const std::filesystem::path& 
             out << '\n';
         }
     });
+    // Input: Callback receives out: configured output stream; captures the validated bundle and metadata.
+    // Output: No callback return value; appends the inputs CSV header and all physical input vectors to out.
+    // Throws: Enabled stream errors and model-query exceptions propagate to writeFile.
     writeFile(staging.path / "inputs.csv", [&](std::ostream& out) {
         out << "input_id";
         for (std::size_t d = 0; d < m.input_dimension; ++d) out << ",u_" << d;
@@ -265,6 +318,10 @@ void exportModelPackage(const ModelBundle& bundle, const std::filesystem::path& 
             out << '\n';
         }
     });
+    // Input: Callback receives out: configured output stream; captures the validated bundle and metadata.
+    // Output: No callback return value; appends the transitions CSV header and all explicit/universal rows to
+    //         out.
+    // Throws: Enabled stream errors and model-query exceptions propagate to writeFile.
     writeFile(staging.path / "transitions.csv", [&](std::ostream& out) {
         out << "state_id,input_id,kind,successor_id\n";
         for (StateId s = 0; s <= m.internal_states; ++s) {

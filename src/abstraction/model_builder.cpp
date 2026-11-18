@@ -4,6 +4,12 @@
 #include <utility>
 
 namespace symctrl {
+// Input: grid, inputs, reachability: compatible views; disturbance: q-dimensional box; options: graph
+//        budgets.
+// Output: Shared immutable graph owning all state/action successor rows, including universal OUT rows and
+//         build statistics.
+// Throws: std::invalid_argument for inconsistent data; std::length_error for exceeded budgets;
+//         arithmetic/backend errors propagate.
 std::shared_ptr<const ITransitionSystem> buildSymbolicModel(const IStateGrid& grid,
     const IInputCatalog& inputs, const IReachability& reachability,
     const Box& disturbance, BuildOptions options) {
@@ -99,6 +105,9 @@ std::shared_ptr<const ITransitionSystem> buildSymbolicModel(const IStateGrid& gr
     return detail::makeExplicitTransitionSystem(states, actions, guarantee, std::move(rows), statistics);
 }
 
+// Input: grid, inputs, transitions: shared immutable handles; metadata: matching model description.
+// Output: Validated ModelBundle retaining shared ownership of the three views and owning its metadata.
+// Throws: Bundle consistency or checked-count validation errors propagate.
 ModelBundle assembleModelBundle(std::shared_ptr<const IStateGrid> grid,
     std::shared_ptr<const IInputCatalog> inputs, std::shared_ptr<const ITransitionSystem> transitions,
     ModelMetadata metadata) {

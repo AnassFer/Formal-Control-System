@@ -6,6 +6,11 @@
 
 namespace symctrl::part2 {
 
+// Input: systemStates/inputCount: system counts; automaton/labels: matching task data; controller:
+//        synthesized product actions.
+// Output: Constructs a policy owning the task, labels and controller; validates their structure; no return
+//         value.
+// Throws: Invalid counts, task, label coverage, product/action IDs or action-list structure.
 AutomatonPolicy::AutomatonPolicy(StateId systemStates, InputId inputCount,
                                  Automaton automaton, StateLabels labels,
                                  ReachabilityController controller)
@@ -46,10 +51,15 @@ AutomatonPolicy::AutomatonPolicy(StateId systemStates, InputId inputCount,
     }
 }
 
+// Input: None; reads this policy automaton.
+// Output: PolicyMemory holding the automaton initial state, before consuming the first observation.
 PolicyMemory AutomatonPolicy::initialMemory() const noexcept {
     return PolicyMemory{static_cast<std::uint64_t>(automaton_.initialState)};
 }
 
+// Input: previous_memory: task state before observation; current_state: internal system ID.
+// Output: Automaton state after consuming the label of current_state; the policy object is unchanged.
+// Throws: std::out_of_range for OUT, invalid system IDs or invalid memory.
 AutomatonStateId AutomatonPolicy::nextState(PolicyMemory previous_memory,
                                            StateId current_state) const {
     if (current_state == kOutside || current_state > systemStates_) {
@@ -63,11 +73,17 @@ AutomatonStateId AutomatonPolicy::nextState(PolicyMemory previous_memory,
     return automaton_.transitions[checkedSize(previous_memory.value)][label];
 }
 
+// Input: previous_memory: memory before this observation; current_state: internal system ID.
+// Output: True if consuming the current label reaches a final automaton state; memory is not mutated.
+// Throws: std::out_of_range for invalid state or memory.
 bool AutomatonPolicy::isFinished(PolicyMemory previous_memory, StateId current_state) const {
     const auto q = nextState(previous_memory, current_state);
     return automaton_.finalStates.count(q) != 0;
 }
 
+// Input: previous_memory: memory before this observation; current_state: internal system ID.
+// Output: PolicyDecision with updated automaton memory and the first allowed product-controller action.
+// Throws: std::out_of_range for invalid state/memory, an already reached goal or a missing controller entry.
 PolicyDecision AutomatonPolicy::decide(PolicyMemory previous_memory, StateId current_state) const {
     const auto q = nextState(previous_memory, current_state);
     if (automaton_.finalStates.count(q) != 0) {

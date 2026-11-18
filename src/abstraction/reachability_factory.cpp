@@ -3,6 +3,10 @@
 #include <utility>
 
 namespace symctrl {
+// Input: dynamics: nonnull model; method: enclosure algorithm; options: requested numerical guarantee.
+// Output: Shared immutable enclosure backend retaining dynamics; current methods report UncertifiedFloat.
+// Throws: std::invalid_argument for invalid model/method; UnsupportedCapability if validated arithmetic is
+//         requested.
 std::shared_ptr<const IReachability> makeReachability(std::shared_ptr<const IDynamics> dynamics,
     ReachabilityMethod method, ReachabilityOptions options) {
     if (!dynamics) throw std::invalid_argument("null dynamics handle");
