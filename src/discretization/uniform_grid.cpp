@@ -53,11 +53,12 @@ public:
     // -----------------------------------------------------------------------
     // Metadata
     // -----------------------------------------------------------------------
-
+    // stateDimension: number of continuous state dimensions
     std::size_t stateDimension() const noexcept override {
         return spec_.domain.lo.size();
     }
 
+    // spec: grid specification (domain + counts)
     const GridSpec& spec() const noexcept override { return spec_; }
 
     StateId internalStateCount() const noexcept override { return M_; }
