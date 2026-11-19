@@ -1,6 +1,7 @@
 #include "symctrl/dynamics.hpp"
 #include <cmath>
 #include <limits>
+
 namespace symctrl {
 // Input: a, b: unsigned 64-bit counts.
 // Output: Their sum a + b as an unsigned 64-bit count.

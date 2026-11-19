@@ -1,5 +1,6 @@
 #include "symctrl/model_bundle.hpp"
 #include <cmath>
+
 namespace symctrl {
 // Input: b: bundle with immutable grid/input/graph handles and metadata describing the same model.
 // Output: No return value; checks handle/metadata consistency without changing the bundle or certifying every

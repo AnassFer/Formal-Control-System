@@ -1,5 +1,6 @@
 #include "symctrl/transition_system.hpp"
 #include <algorithm>
+
 namespace symctrl {
 // Input: set: explicit or universal successors; internal_states: M, so valid IDs are 0..M.
 // Output: No return value; checks sorted unique explicit IDs or empty AllStates storage; set is unchanged.

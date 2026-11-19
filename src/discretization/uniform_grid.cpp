@@ -64,8 +64,6 @@ public:
         return spec_.domain.lo.size();
     }
 
-    // Input: None; reads this grid.
-    // Output: Read-only reference to domain and cell counts, valid for the grid lifetime.
     const GridSpec& spec() const noexcept override { return spec_; }
 
     // Input: None; reads this grid.
