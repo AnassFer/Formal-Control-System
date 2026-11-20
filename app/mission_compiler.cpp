@@ -52,6 +52,11 @@ bool isCellInsideRegion2D(const symctrl::Box& cell, const RegionSpec& region, do
         && cell.lo[1] >= region.x2Min - eps && cell.hi[1] <= region.x2Max + eps;
 }
 
+bool isCellIntersectingRegion2D(const symctrl::Box& cell, const RegionSpec& region, double eps = 1e-12) {
+    return cell.hi[0] > region.x1Min + eps && cell.lo[0] < region.x1Max - eps
+        && cell.hi[1] > region.x2Min + eps && cell.lo[1] < region.x2Max - eps;
+}
+
 } // namespace
 
 symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec>& regions,
@@ -181,19 +186,43 @@ symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec
 }
 
 symctrl::part2::StateLabels buildRegionLabels(const symctrl::IStateGrid& grid,
-                                              const std::vector<RegionSpec>& regions) {
+                                              const std::vector<RegionSpec>& regions,
+                                              const MissionSpec& mission) {
+    std::vector<bool> isAvoid(regions.size(), false);
+    for (const std::string& raw : mission.avoid) {
+        const std::string name = trim(raw);
+        for (std::size_t i = 0; i < regions.size(); ++i) {
+            if (trim(regions[i].name) == name) {
+                isAvoid[i] = true;
+            }
+        }
+    }
+
     symctrl::part2::StateLabels labels;
     const symctrl::StateId count = grid.internalStateCount();
 
     for (symctrl::StateId state = 1; state <= count; ++state) {
         const symctrl::Box cell = grid.cellBounds(state);
         symctrl::part2::LabelId assigned = 0;
+
+        // 1. Priorite aux obstacles : sur-approximation (intersection)
         for (std::size_t i = 0; i < regions.size(); ++i) {
-            if (isCellInsideRegion2D(cell, regions[i])) {
+            if (isAvoid[i] && isCellIntersectingRegion2D(cell, regions[i])) {
                 assigned = static_cast<symctrl::part2::LabelId>(i + 1);
                 break;
             }
         }
+
+        // 2. Cibles : sous-approximation (inclusion)
+        if (assigned == 0) {
+            for (std::size_t i = 0; i < regions.size(); ++i) {
+                if (!isAvoid[i] && isCellInsideRegion2D(cell, regions[i])) {
+                    assigned = static_cast<symctrl::part2::LabelId>(i + 1);
+                    break;
+                }
+            }
+        }
+
         labels[state] = assigned;
     }
     return labels;

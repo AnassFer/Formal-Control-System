@@ -36,7 +36,7 @@ void DashboardState::loadFastTestPreset() {
 }
 
 void DashboardState::loadPaperExactPreset() {
-    config = makePaperDefaultConfig(false); // Grille 20x20x12 par defaut; editable en 100x100x30
+    config = makePaperDefaultConfig(true); // Grille 100x100x30 par defaut
     initX1 = 0.5;
     initX2 = 4.5;
     initX3 = 0.0;

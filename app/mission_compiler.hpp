@@ -30,6 +30,7 @@ symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec
                                                     const MissionSpec& mission);
 
 symctrl::part2::StateLabels buildRegionLabels(const symctrl::IStateGrid& grid,
-                                              const std::vector<RegionSpec>& regions);
+                                              const std::vector<RegionSpec>& regions,
+                                              const MissionSpec& mission);
 
 } // namespace robot_app

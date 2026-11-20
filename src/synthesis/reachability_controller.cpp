@@ -71,14 +71,20 @@ ReachabilityController buildReachabilityController(const ITransitionSystem& mode
         }
 
         StateSet lower;
-        for (StateId next : result.domain) {
-            if (result.ranks.at(next) < rank) {
-                lower.insert(next);
-            }
-        }
-
         for (InputId input = 0; input < inputCount; ++input) {
-            if (detail::keepsInside(model, state, input, lower)) {
+            const auto& succs = model.successors(state, input);
+            if (succs.kind != SuccessorKind::Explicit || succs.ids.empty()) {
+                continue;
+            }
+            bool allLower = true;
+            for (StateId succ : succs.ids) {
+                auto it = result.ranks.find(succ);
+                if (it == result.ranks.end() || it->second >= rank) {
+                    allLower = false;
+                    break;
+                }
+            }
+            if (allLower) {
                 allowedInputs.push_back(input);
             }
         }

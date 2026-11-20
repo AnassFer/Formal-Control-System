@@ -75,10 +75,17 @@ public:
         for (std::size_t d = 0; d < n; ++d) {
             const double lo = spec_.domain.lo[d];
             const double hi = spec_.domain.hi[d];
-            // Strict check: any coord outside the closed domain → OUT.
-            if (x[d] < lo || x[d] > hi) return kOutside;
+            double val = x[d];
+            if (!spec_.periodic.empty() && spec_.periodic[d]) {
+                const double period = hi - lo;
+                val = std::fmod(val - lo, period);
+                if (val < 0.0) val += period;
+                val += lo;
+            } else if (val < lo || val > hi) {
+                return kOutside;
+            }
 
-            const double raw = (x[d] - lo) / eta_[d];
+            const double raw = (val - lo) / eta_[d];
             uint64_t i = static_cast<uint64_t>(std::floor(raw));
             const uint64_t count = spec_.cells_per_dimension[d];
             // Clamp: x[d] exactly at domain.hi gives raw == count; keep it
@@ -167,45 +174,59 @@ public:
         if (closed_box.lo.size() != n)
             throw std::invalid_argument("intersectingInternalCells: box dimension mismatch");
 
-        // Compute per-dimension 0-based index ranges.
-        std::vector<uint64_t> first(n), last(n);
+        // Compute per-dimension 0-based index ranges (signed for periodic wrap-around).
+        std::vector<long long> first(n), last(n);
         for (std::size_t d = 0; d < n; ++d) {
-            const double L     = spec_.domain.lo[d];
-            const uint64_t cnt = spec_.cells_per_dimension[d];
-
-            // Conservative lower candidate (subtract 1 to handle boundary error).
-            const double raw_lo = (closed_box.lo[d] - L) / eta_[d];
+            const double L        = spec_.domain.lo[d];
+            const long long cnt   = static_cast<long long>(spec_.cells_per_dimension[d]);
+            const double raw_lo   = (closed_box.lo[d] - L) / eta_[d];
+            const double raw_hi   = (closed_box.hi[d] - L) / eta_[d];
             const long long f_raw = static_cast<long long>(std::ceil(raw_lo)) - 1LL;
-            first[d] = (f_raw < 0LL) ? 0u : static_cast<uint64_t>(f_raw);
-
-            // Conservative upper candidate.
-            const double raw_hi = (closed_box.hi[d] - L) / eta_[d];
             const long long l_raw = static_cast<long long>(std::floor(raw_hi));
-            if (l_raw < 0LL) return {}; // box entirely below domain in this dim
-            const uint64_t l_clamped = static_cast<uint64_t>(l_raw);
-            last[d] = (l_clamped >= cnt) ? cnt - 1u : l_clamped;
 
-            if (first[d] > last[d]) return {}; // no overlap in this dimension
+            if (!spec_.periodic.empty() && spec_.periodic[d]) {
+                if (l_raw - f_raw + 1LL >= cnt) {
+                    first[d] = 0LL;
+                    last[d]  = cnt - 1LL;
+                } else {
+                    first[d] = f_raw;
+                    last[d]  = l_raw;
+                }
+            } else {
+                first[d] = (f_raw < 0LL) ? 0LL : f_raw;
+                if (l_raw < 0LL) return {}; // box entirely below domain in this dim
+                last[d] = (l_raw >= cnt) ? cnt - 1LL : l_raw;
+                if (first[d] > last[d]) return {}; // no overlap in this dimension
+            }
         }
 
         // Enumerate all cells in the n-dimensional range [first..last] using
         // dimension-0-fastest order and collect their IDs.
         std::vector<StateId> result;
+        std::vector<long long> cur = first;
         GridIndex idx(n);
-        for (std::size_t d = 0; d < n; ++d)
-            idx[d] = static_cast<uint32_t>(first[d]);
 
         while (true) {
+            for (std::size_t d = 0; d < n; ++d) {
+                if (!spec_.periodic.empty() && spec_.periodic[d]) {
+                    const long long cnt = static_cast<long long>(spec_.cells_per_dimension[d]);
+                    long long wrapped = cur[d] % cnt;
+                    if (wrapped < 0LL) wrapped += cnt;
+                    idx[d] = static_cast<uint32_t>(wrapped);
+                } else {
+                    idx[d] = static_cast<uint32_t>(cur[d]);
+                }
+            }
             result.push_back(fromIndices(idx));
 
             // Increment index in dimension-0-fastest order (odometer).
             std::size_t d = 0;
             while (d < n) {
-                if (static_cast<uint64_t>(idx[d]) < last[d]) {
-                    ++idx[d];
+                if (cur[d] < last[d]) {
+                    ++cur[d];
                     break;
                 }
-                idx[d] = static_cast<uint32_t>(first[d]);
+                cur[d] = first[d];
                 ++d;
             }
             if (d == n) break; // all dimensions wrapped: enumeration complete

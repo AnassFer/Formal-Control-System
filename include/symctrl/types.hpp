@@ -26,7 +26,8 @@ public:
 enum class NumericGuarantee { UncertifiedFloat, ValidatedEnclosure };
 enum class Provenance { HandAuthoredFixture, GeneratedPart1 };
 struct Box { Vector lo; Vector hi; };
-struct GridSpec { Box domain; GridIndex cells_per_dimension; };
+// (La période d'une dimension périodique $d$ est simplement $P_d = \text{domain.hi}[d] - \text{domain.lo}[d]$, soit $2\pi$ pour $[-\pi, \pi]$.
+struct GridSpec { Box domain; GridIndex cells_per_dimension; std::vector<bool> periodic;};
 
 void validateVector(const Vector& value, std::size_t dimension);
 void validateBox(const Box& box, bool allow_empty_disturbance = false);

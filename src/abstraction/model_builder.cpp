@@ -40,8 +40,9 @@ std::shared_ptr<const ITransitionSystem> buildSymbolicModel(const IStateGrid& gr
         rows[checkedSize(action)].kind = SuccessorKind::AllStates;
 
     BuildStatistics statistics;
+    Box cell;
     for (StateId state = 1; state <= states; ++state) {
-        const auto cell = grid.cellBounds(state);
+        cell = grid.cellBounds(state);
         validateBox(cell);
         validateVector(cell.lo, n);
         for (std::size_t d = 0; d < n; ++d)
@@ -56,9 +57,11 @@ std::shared_ptr<const ITransitionSystem> buildSymbolicModel(const IStateGrid& gr
             validateBox(enclosure);
             validateVector(enclosure.lo, n);
             bool outside = false;
-            for (std::size_t d = 0; d < n; ++d)
+            for (std::size_t d = 0; d < n; ++d) {
+                if (!spec.periodic.empty() && spec.periodic[d]) continue;
                 outside = outside || enclosure.lo[d] <= spec.domain.lo[d]
                                   || enclosure.hi[d] >= spec.domain.hi[d];
+            }
 
             const auto hits = grid.intersectingInternalCells(enclosure);
             StateId previous = 0;

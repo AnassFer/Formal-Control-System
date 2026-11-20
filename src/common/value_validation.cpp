@@ -35,6 +35,7 @@ namespace symctrl {
     StateId validateGridSpec(const GridSpec& spec) {
         validateBox(spec.domain);
         if (spec.cells_per_dimension.size() != spec.domain.lo.size()) throw std::invalid_argument("grid shape mismatch");
+        if (!spec.periodic.empty() && spec.periodic.size() != spec.domain.lo.size()) throw std::invalid_argument("periodic flags size mismatch");
         StateId count = 1;
         for (std::size_t d = 0; d < spec.domain.lo.size(); ++d) {
             const double width = spec.domain.hi[d] - spec.domain.lo[d];

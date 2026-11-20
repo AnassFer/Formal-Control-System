@@ -29,8 +29,8 @@ int main(int argc, char** argv) {
     }
     try {
         const bool building = command == "building-n3";
-        const GridSpec spec = building ? GridSpec{{{17, 17, 17}, {22, 22, 22}}, {10, 10, 10}}
-                                       : GridSpec{{{17}, {23}}, {3}};
+        const GridSpec spec = building ? GridSpec{{{17, 17, 17}, {22, 22, 22}}, {10, 10, 10}, {}}
+                               : GridSpec{{{17}, {23}}, {3}, {}};
         auto grid = makeUniformGrid(spec);
         auto inputs = building ? makeCartesianInputs({{0, 0.3, 0.6}, {0, 0.3, 0.6}, {0, 0.3, 0.6}})
                                : makeInputCatalog({{0}, {1}});

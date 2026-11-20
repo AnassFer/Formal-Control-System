@@ -20,7 +20,8 @@ namespace symctrl {
             || m.input_count != b.transitions->inputCount()
             || m.numeric_guarantee != b.transitions->numericGuarantee()
             || m.grid.domain.lo != b.grid->spec().domain.lo || m.grid.domain.hi != b.grid->spec().domain.hi
-            || m.grid.cells_per_dimension != b.grid->spec().cells_per_dimension)
+            || m.grid.cells_per_dimension != b.grid->spec().cells_per_dimension
+            || m.grid.periodic != b.grid->spec().periodic)
             throw std::invalid_argument("bundle metadata/views disagree");
         validateBox(m.disturbance, true);
         if (m.disturbance.lo.size() != m.disturbance_dimension) throw std::invalid_argument("disturbance dimension mismatch");
