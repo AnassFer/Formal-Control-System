@@ -4,7 +4,7 @@ This C++17 project builds a finite model of a system with continuous states, com
 
 The physical system has the form `x_next = f(x, u, w)`: `x` is its state, `u` is the chosen input, and `w` is a bounded disturbance. A grid groups physical states into cells. For each cell and input, reachability analysis encloses all possible next states. Intersecting that enclosure with the grid produces a finite transition graph. A synthesis algorithm then chooses inputs that satisfy a separately supplied objective for **every** possible successor.
 
-The engine supports runtime dimensions and supplied dynamics. The thermostat and circular building are example models. The paper's mobile robot remains a later application of the same engine.
+The engine supports runtime dimensions and supplied dynamics. Examples include the thermostat, circular building, and a mobile robot with periodic heading, mission synthesis, and an interactive dashboard.
 
 Navigation: [implemented features](#what-is-implemented) · [build and run](#build-and-run) · [files](#where-the-code-lives) · [conventions](#data-and-conventions) · [function guide](#function-guide) · [library example](#use-the-library) · [export](#exported-model-package).
 
@@ -19,28 +19,91 @@ Navigation: [implemented features](#what-is-implemented) · [build and run](#bui
 | Finite-automaton tasks, paper Part 2 | Deterministic automaton validation, product graph, accepting target, winning initial states, and a finite-memory policy. |
 | Physical examples | Thermostat and circular-building dynamics, including their monotonicity checks and absolute derivative bounds. |
 | Command-line application | Thermostat abstraction, a supplied-policy simulation, three-room building abstraction, and thermostat export. |
+| Mobile robot and dashboard | Unicycle dynamics, periodic heading, finite-automaton missions, optimized synthesis, trajectory simulation, and a GLFW/Dear ImGui/ImPlot interface. |
 
 All these sources are compiled by the default build. Synthesis is a C++ library API; the CLI commands demonstrate abstraction, refinement, and export. The safety and reachability controller builders return maps of allowed inputs. `AutomatonPolicy` implements the executable `ISymbolicPolicy` interface for automaton tasks.
 
-Still absent: the mobile-robot model and its periodic-heading handling, a general configuration-file reader, a model-package importer, cost/optimal-control synthesis, and advanced large-model representations. There is no claimed full-paper application or scaling result.
+Still absent: a general configuration-file reader, a model-package importer, a general cost/optimal-control synthesis API, and advanced large-model representations. There is no claimed full-paper application or scaling result.
 
 Numerical backends currently report `UncertifiedFloat`. Their formulas depend on valid model assumptions, and floating-point calculations do not provide certified physical guarantees. Requesting validated reachability fails explicitly.
 
 ## Build and run
 
-Requirements: a C++17 compiler, CMake 3.21 or newer, and a CMake build tool such as Make. The project itself needs no downloaded libraries, Python, or network access.
+Requirements on both platforms: a C/C++ compiler with C++17 support, **CMake 3.21 or newer**, **Git** on `PATH`, a build tool, and graphics drivers supporting **OpenGL 3.0 or newer**. Run the dashboard in a graphical desktop session.
 
-Run from the project root:
+During the first CMake configuration, Git downloads **GLFW 3.4**, **Dear ImGui v1.90.9**, and **ImPlot v0.16** automatically. Internet access is required for that step. Do not install these libraries separately; no Python, pip, or Node.js packages are needed. CMake also detects the system thread library automatically.
+
+Run all build commands from the project root, the folder containing `CMakeLists.txt`. Use separate build directories for Windows and Ubuntu.
+
+### Ubuntu: install dependencies
+
+On Ubuntu 22.04 or newer, install the compiler, Make, CMake, Git, OpenGL development files, and the X11/Wayland development dependencies:
+
+```bash
+sudo apt update
+sudo apt install build-essential cmake git pkg-config \
+  libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
+cmake --version
+```
+
+The X11 and Wayland packages follow the [GLFW build requirements](https://www.glfw.org/docs/3.4/compile.html). Both backends are enabled by default.
+
+### Ubuntu: build and run the robot dashboard
+
+```bash
+cmake -S . -B build-ubuntu -DCMAKE_BUILD_TYPE=Release
+cmake --build build-ubuntu --target robot_dashboard --parallel 2
+./build-ubuntu/robot_dashboard
+```
+
+If startup aborts with `Settings schema 'org.gnome.settings-daemon.plugins.xsettings' does not contain a key named 'antialiasing'`, launch through X11:
+
+```bash
+XDG_SESSION_TYPE=x11 ./build-ubuntu/robot_dashboard
+```
+
+This selects GLFW's X11 backend and requires an X11/XWayland display. If the error persists in a VS Code Snap terminal, open Ubuntu Terminal with **Ctrl+Alt+T**, navigate to the project root, and run the same command there.
+
+### Windows: install dependencies
+
+Install these before building:
+
+- [Git for Windows](https://git-scm.com/downloads/win), with Git available from the command line.
+- [CMake 3.21 or newer](https://cmake.org/download/), selecting **Add CMake to the system PATH** during installation.
+- **Visual Studio 2022** or **Build Tools for Visual Studio 2022**, with the **Desktop development with C++** workload. Include the **MSVC v143 x64/x86 build tools** and a **Windows 10 or Windows 11 SDK**. See [Microsoft's C++ installation instructions](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170).
+- Your graphics vendor's Windows driver with OpenGL 3.0 support. The Windows SDK supplies the OpenGL development files; no separate GLFW, ImGui, ImPlot, or pthread package is required.
+
+Restart the terminal after installation. Visual Studio Code alone does not supply a compiler or Windows SDK.
+
+### Windows: build and run the robot dashboard
+
+Open **PowerShell** in the project root. These commands use the [Visual Studio 2022 generator](https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2017%202022.html):
+
+```powershell
+git --version
+cmake --version
+cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
+cmake --build build-windows --config Release --target robot_dashboard --parallel 2
+.\build-windows\Release\robot_dashboard.exe
+```
+
+For this Windows generator, `--config Release` selects the build configuration, and the executable is inside the `Release` subdirectory. On Ubuntu, `-DCMAKE_BUILD_TYPE=Release` selects it during configuration. After source changes, rerun the build command before launching again.
+
+### Command-line examples
+
+On Ubuntu, also build and run the robot CLI or the original model examples:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel 2
-./build/symctrl_cli --help
-./build/symctrl_cli thermostat
-./build/symctrl_cli thermostat-policy
-./build/symctrl_cli building-n3
-./build/symctrl_cli export-thermostat exports/thermostat
+cmake --build build-ubuntu --target robot_cli symctrl_cli --parallel 2
+./build-ubuntu/robot_cli
+./build-ubuntu/symctrl_cli --help
+./build-ubuntu/symctrl_cli thermostat
+./build-ubuntu/symctrl_cli thermostat-policy
+./build-ubuntu/symctrl_cli building-n3
+./build-ubuntu/symctrl_cli export-thermostat exports/thermostat
 ```
+
+On Windows, build those targets with `cmake --build build-windows --config Release --target robot_cli symctrl_cli --parallel 2`, then use `.\build-windows\Release\robot_cli.exe` or `.\build-windows\Release\symctrl_cli.exe` with the same model arguments.
 
 | Command | What it does |
 | --- | --- |
@@ -56,8 +119,13 @@ Exit codes are `0` for success, `1` for invalid usage or a reported exception, a
 
 ```text
 readme.md                          This guide
-CMakeLists.txt                     Builds all libraries and the CLI
+CMakeLists.txt                     Builds libraries, CLIs, and the robot dashboard
 app/symbolic_control.cpp           CLI commands and supplied example policy
+app/robot_cli.cpp                  Robot synthesis and simulation CLI
+app/robot_simulation.cpp           Optimized robot synthesis and closed-loop simulation
+app/unicycle_dynamics.cpp          Mobile-robot dynamics
+app/mission_compiler.cpp           Region labels and mission automata
+app/dashboard/                    Interactive robot dashboard
 include/symctrl/                   Public types, interfaces, and factories
 include/symctrl/synthesis/         Public synthesis and automaton APIs
 src/common/                       Value, successor-set, and bundle validation
@@ -357,4 +425,4 @@ The exported model contains the dynamics abstraction, not a safety/target/automa
 
 The general stages follow Girard, Meyer, and Saoud, *Approches symboliques pour le contrôle des systèmes non linéaires*, S7467 V1 (2024): Section 1 supplies abstraction/refinement, Section 2 supplies synthesis, and Section 3 supplies the later robot example. The thermal models and circular-building challenge also appear in Saoud's *Project – Symbolic Control*, Computation theory, Fall 2026.
 
-Development A/B were ownership tracks within Part 1. They do not indicate different paper stages. The current folders express the mathematical responsibilities directly. Future robot work needs sound handling of periodic heading and cell labels; cost optimization and scalable representations remain separate extensions of the reusable pipeline.
+Development A/B were ownership tracks within Part 1. They do not indicate different paper stages. The current folders express the mathematical responsibilities directly. The robot application implements periodic heading and region labels; general cost optimization and scalable representations remain separate extensions of the reusable pipeline.
