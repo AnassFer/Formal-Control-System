@@ -8,8 +8,6 @@ The engine supports runtime dimensions and supplied dynamics. Examples include t
 
 Navigation: [implemented features](#what-is-implemented) · [build and run](#build-and-run) · [files](#where-the-code-lives) · [conventions](#data-and-conventions) · [function guide](#function-guide) · [library example](#use-the-library) · [export](#exported-model-package).
 
-test latif
-
 ## What is implemented
 
 | Area | Existing implementation |
