@@ -5,14 +5,17 @@
 namespace {
 class SuppliedPolicy final : public symctrl::ISymbolicPolicy {
 public:
+    // Input: memory: previous policy memory; state: thermostat state ID in 1..3.
+    // Output: Unchanged memory and action 1 in state 1, otherwise action 0; this is a manually supplied
+    //         table.
+    // Throws: std::out_of_range for states outside 1..3.
     symctrl::PolicyDecision decide(symctrl::PolicyMemory memory, symctrl::StateId state) const override {
         // Manually supplied paper demonstration table; no synthesis.
         if (state < 1 || state > 3) throw std::out_of_range("supplied policy domain");
         return {memory, state == 1 ? symctrl::InputId{1} : symctrl::InputId{0}};
     }
 };
-} // namespace
-
+}
 int main(int argc, char** argv) {
     using namespace symctrl;
     if (argc == 2 && std::string(argv[1]) == "--help") {

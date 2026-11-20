@@ -7,6 +7,9 @@
 namespace symctrl::part2 {
 namespace detail {
 
+// Input: model: graph; state/input: valid row IDs; region: permitted successor IDs.
+// Output: True exactly when the successor row is nonempty and every successor belongs to region.
+// Throws: Graph-query or successor-representation errors propagate.
 bool keepsInside(const ITransitionSystem& model,
                  StateId state,
                  InputId input,
@@ -20,16 +23,21 @@ bool keepsInside(const ITransitionSystem& model,
 
     switch (successors.kind) {
         case SuccessorKind::AllStates:
-            for (StateId s = 1; s <= stateCount; ++s) {
+            // AllStates includes OUT as well as every internal state.
+            if (region.count(kOutside) == 0) {
+                return false;
+            }
+            for (StateId index = 0; index < stateCount; ++index) {
+                const StateId s = index + 1;
                 if (region.count(s) == 0) {
                     return false;
                 }
             }
-            return stateCount > 0;
+            return true;
 
         case SuccessorKind::Explicit:
             for (StateId succ : successors.ids) {
-                if (succ == 0 || succ > stateCount || region.count(succ) == 0) {
+                if (region.count(succ) == 0) {
                     return false;
                 }
             }
@@ -52,10 +60,11 @@ bool keepsInsideFast(const ITransitionSystem& model,
 
     switch (successors.kind) {
         case SuccessorKind::AllStates:
-            if (stateCount == 0) {
+            if (inRegion[0] == 0) {
                 return false;
             }
-            for (StateId s = 1; s <= stateCount; ++s) {
+            for (StateId index = 0; index < stateCount; ++index) {
+                const StateId s = index + 1;
                 if (inRegion[static_cast<std::size_t>(s)] == 0) {
                     return false;
                 }
@@ -67,8 +76,7 @@ bool keepsInsideFast(const ITransitionSystem& model,
                 return false;
             }
             for (StateId succ : successors.ids) {
-                if (succ == 0 || succ > stateCount
-                    || inRegion[static_cast<std::size_t>(succ)] == 0) {
+                if (inRegion[static_cast<std::size_t>(succ)] == 0) {
                     return false;
                 }
             }
@@ -80,6 +88,10 @@ bool keepsInsideFast(const ITransitionSystem& model,
 
 } // namespace detail
 
+// Input: model: complete transition graph; region: desired successor-state set.
+// Output: Internal states having at least one input with nonempty successors entirely inside region; OUT is
+//         excluded.
+// Throws: Graph-query or successor-representation errors propagate.
 StateSet robustPredecessor(const ITransitionSystem& model,
                            const StateSet& region) {
     StateSet result;
@@ -93,9 +105,9 @@ StateSet robustPredecessor(const ITransitionSystem& model,
         return result;
     }
 
-    std::vector<std::uint8_t> inRegion(static_cast<std::size_t>(stateCount) + 1, 0);
+    std::vector<std::uint8_t> inRegion(checkedSize(checkedAdd(stateCount, 1)), 0);
     for (StateId s : region) {
-        if (s >= 1 && s <= stateCount) {
+        if (s <= stateCount) {
             inRegion[static_cast<std::size_t>(s)] = 1;
         }
     }

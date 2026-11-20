@@ -23,6 +23,12 @@ namespace symctrl {
 //                           mismatched or nonfinite measured_x.
 // ---------------------------------------------------------------------------
 
+// Input: grid, inputs, policy: compatible views; measured_x: state vector; previous_memory: memory before
+//        observation.
+// Output: ConcreteDecision with located state, action ID, owned physical input vector and updated policy
+//         memory.
+// Throws: std::out_of_range for OUT, invalid action or missing policy entry; measurement/policy errors
+//         propagate.
 ConcreteDecision refineDecision(const IStateGrid&    grid,
                                 const IInputCatalog& inputs,
                                 const ISymbolicPolicy& policy,

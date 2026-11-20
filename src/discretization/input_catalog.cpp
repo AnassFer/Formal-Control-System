@@ -15,6 +15,9 @@ namespace {
 
 class ExplicitInputCatalog final : public IInputCatalog {
 public:
+    // Input: values: nonempty ordered list of finite input vectors of the same positive dimension.
+    // Output: Constructs an owned catalog preserving caller order and duplicates; no return value.
+    // Throws: std::invalid_argument for an empty list, zero dimension or invalid vector.
     explicit ExplicitInputCatalog(std::vector<Vector> values)
         : values_(std::move(values)) {
         if (values_.empty())
@@ -28,11 +31,18 @@ public:
         m_ = m;
     }
 
+    // Input: None; reads this input catalog.
+    // Output: Number m of coordinates in each physical input vector.
     std::size_t inputDimension() const noexcept override { return m_; }
+    // Input: None; reads this input catalog.
+    // Output: Number A of available actions; valid action IDs are 0..A-1.
     InputId     inputCount()     const noexcept override {
         return static_cast<InputId>(values_.size());
     }
 
+    // Input: input: action ID in 0..A-1.
+    // Output: Read-only reference to the corresponding m-coordinate vector, valid for the catalog lifetime.
+    // Throws: std::out_of_range for an invalid action ID.
     const Vector& value(InputId input) const override {
         if (input >= static_cast<InputId>(values_.size()))
             throw std::out_of_range("value: input ID out of range");
@@ -58,6 +68,11 @@ private:
 
 class CartesianInputCatalog final : public IInputCatalog {
 public:
+    // Input: per_dimension_values: one nonempty finite value list per input coordinate.
+    // Output: Constructs all Cartesian-product vectors, coordinate 0 fastest, with stable stored references;
+    //         no return value.
+    // Throws: std::invalid_argument for invalid axes; std::overflow_error for count overflow; allocation
+    //         failures propagate.
     explicit CartesianInputCatalog(std::vector<Vector> per_dimension_values)
         : axes_(std::move(per_dimension_values)) {
         if (axes_.empty())
@@ -94,9 +109,16 @@ public:
         }
     }
 
+    // Input: None; reads this input catalog.
+    // Output: Number m of coordinates in each physical input vector.
     std::size_t inputDimension() const noexcept override { return m_; }
+    // Input: None; reads this input catalog.
+    // Output: Number A of available actions; valid action IDs are 0..A-1.
     InputId     inputCount()     const noexcept override { return count_; }
 
+    // Input: input: action ID in 0..A-1.
+    // Output: Read-only reference to the corresponding m-coordinate vector, valid for the catalog lifetime.
+    // Throws: std::out_of_range for an invalid action ID.
     const Vector& value(InputId input) const override {
         if (input >= count_)
             throw std::out_of_range("value: input ID out of range");
@@ -116,10 +138,16 @@ private:
 // Public factories — single definition per symbol in this translation unit.
 // ---------------------------------------------------------------------------
 
+// Input: values: nonempty ordered list of finite, equally sized, positive-dimensional vectors.
+// Output: Shared immutable input catalog preserving order and duplicates.
+// Throws: std::invalid_argument for invalid input vectors.
 std::shared_ptr<const IInputCatalog> makeInputCatalog(std::vector<Vector> values) {
     return std::make_shared<ExplicitInputCatalog>(std::move(values));
 }
 
+// Input: per_dimension_values: nonempty finite axis values for each input coordinate.
+// Output: Shared immutable catalog of all combinations, with coordinate 0 varying fastest.
+// Throws: std::invalid_argument for invalid axes; count overflow and allocation errors propagate.
 std::shared_ptr<const IInputCatalog> makeCartesianInputs(std::vector<Vector> per_dimension_values) {
     return std::make_shared<CartesianInputCatalog>(std::move(per_dimension_values));
 }

@@ -29,6 +29,10 @@ namespace {
 
 class UniformGrid final : public IStateGrid {
 public:
+    // Input: spec: state domain and positive cell counts for each coordinate.
+    // Output: Constructs an owned grid with total count M, coordinate strides and cell widths; no return
+    //         value.
+    // Throws: std::invalid_argument for invalid geometry; std::overflow_error for count overflow.
     explicit UniformGrid(GridSpec spec) : spec_(std::move(spec)) {
         // validateGridSpec checks: positive widths, nonzero counts,
         // dimension consistency, and that M+1 fits in size_t.
@@ -53,20 +57,27 @@ public:
     // -----------------------------------------------------------------------
     // Metadata
     // -----------------------------------------------------------------------
-    // stateDimension: number of continuous state dimensions
+
+    // Input: None; reads this grid.
+    // Output: Number n of continuous state coordinates.
     std::size_t stateDimension() const noexcept override {
         return spec_.domain.lo.size();
     }
 
-    // spec: grid specification (domain + counts)
     const GridSpec& spec() const noexcept override { return spec_; }
 
+    // Input: None; reads this grid.
+    // Output: Number M of internal cells; OUT (state 0) is excluded.
     StateId internalStateCount() const noexcept override { return M_; }
 
     // -----------------------------------------------------------------------
     // locate: point → cell ID (or kOutside)
     // -----------------------------------------------------------------------
 
+    // Input: x: finite physical state vector with n coordinates.
+    // Output: Owning state ID in 1..M, or OUT (0) outside the domain; internal faces belong to the
+    //         higher-index cell.
+    // Throws: std::invalid_argument for a wrong dimension or nonfinite coordinate.
     StateId locate(const Vector& x) const override {
         const std::size_t n = stateDimension();
         validateVector(x, n); // throws invalid_argument on wrong size / NaN/Inf
@@ -100,6 +111,9 @@ public:
     // cellBounds: cell ID → closed Box
     // -----------------------------------------------------------------------
 
+    // Input: state: internal cell ID in 1..M.
+    // Output: Closed cell box with n lower and n upper coordinates.
+    // Throws: std::out_of_range for OUT or an invalid state ID.
     Box cellBounds(StateId state) const override {
         if (state == kOutside || state > M_)
             throw std::out_of_range("cellBounds: OUT has no finite cell box; valid range is 1..M");
@@ -121,6 +135,9 @@ public:
     // indices: cell ID → n-dimensional GridIndex
     // -----------------------------------------------------------------------
 
+    // Input: state: internal cell ID in 1..M.
+    // Output: Zero-based index per coordinate, with coordinate 0 varying fastest.
+    // Throws: std::out_of_range for OUT or an invalid state ID.
     GridIndex indices(StateId state) const override {
         if (state == kOutside || state > M_)
             throw std::out_of_range("indices: state ID out of range 1..M");
@@ -142,6 +159,9 @@ public:
     //   id = 1 + sum(index[d] * stride[d])
     // -----------------------------------------------------------------------
 
+    // Input: index: n zero-based coordinate indices, each below its cell count.
+    // Output: Internal state ID 1 + sum(index[d] * stride[d]) in 1..M.
+    // Throws: std::invalid_argument for a wrong index dimension; std::out_of_range for an invalid component.
     StateId fromIndices(const GridIndex& index) const override {
         const std::size_t n = stateDimension();
         if (index.size() != n)
@@ -168,6 +188,9 @@ public:
     // Empty range in any dimension → no intersecting cells.
     // -----------------------------------------------------------------------
 
+    // Input: closed_box: finite closed box with n coordinates.
+    // Output: Sorted unique internal IDs whose closed cells intersect the box; may be empty; excludes OUT.
+    // Throws: std::invalid_argument for an invalid box or dimension mismatch.
     std::vector<StateId> intersectingInternalCells(const Box& closed_box) const override {
         const std::size_t n = stateDimension();
         validateBox(closed_box); // finiteness + lo<=hi + non-empty state box
@@ -254,6 +277,9 @@ private:
 // Public factory — the only symbol defined in this translation unit.
 // ---------------------------------------------------------------------------
 
+// Input: spec: domain and positive cell counts per state coordinate.
+// Output: Shared immutable grid owning the supplied specification.
+// Throws: std::invalid_argument for invalid geometry/counts; std::overflow_error for count overflow.
 std::shared_ptr<const IStateGrid> makeUniformGrid(GridSpec spec) {
     return std::make_shared<UniformGrid>(std::move(spec));
 }
