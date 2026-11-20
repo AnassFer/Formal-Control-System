@@ -410,10 +410,24 @@ void renderPlotCanvas(DashboardState& state) {
     if (ImPlot::BeginPlot("Simulation du robot mobile (x1, x2)", avail, ImPlotFlags_Equal)) {
         ImPlot::SetupAxes("x1", "x2");
         const ImPlotCond cond = state.resetPlotLimits ? ImPlotCond_Always : ImPlotCond_Once;
-        const double padX = 0.05 * (cfg.x1Max - cfg.x1Min);
-        const double padY = 0.05 * (cfg.x2Max - cfg.x2Min);
-        ImPlot::SetupAxisLimits(ImAxis_X1, cfg.x1Min - padX, cfg.x1Max + padX, cond);
-        ImPlot::SetupAxisLimits(ImAxis_Y1, cfg.x2Min - padY, cfg.x2Max + padY, cond);
+        const double cx = 0.5 * (cfg.x1Min + cfg.x1Max);
+        const double cy = 0.5 * (cfg.x2Min + cfg.x2Max);
+        double halfX = 0.55 * (cfg.x1Max - cfg.x1Min); // +10% de marge totale
+        double halfY = 0.55 * (cfg.x2Max - cfg.x2Min);
+
+        // Adapte les bornes au ratio de la fenetre pour que ImPlotFlags_Equal ne rogne pas le carre blanc
+        const double plotW = std::max(1.0, static_cast<double>(avail.x) - 60.0);
+        const double plotH = std::max(1.0, static_cast<double>(avail.y) - 70.0);
+        const double aspect = plotW / plotH;
+
+        if (halfX / halfY < aspect) {
+            halfX = halfY * aspect;
+        } else {
+            halfY = halfX / aspect;
+        }
+
+        ImPlot::SetupAxisLimits(ImAxis_X1, cx - halfX, cx + halfX, cond);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, cy - halfY, cy + halfY, cond);
         state.resetPlotLimits = false;
 
         ImDrawList* drawList = ImPlot::GetPlotDrawList();
