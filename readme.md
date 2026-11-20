@@ -478,4 +478,4 @@ The general stages follow Girard, Meyer, and Saoud, *Approches symboliques pour 
 
 Development A/B were ownership tracks within Part 1. They do not indicate different paper stages. The current folders express the mathematical responsibilities directly. The robot application implements periodic heading and region labels; general cost optimization and scalable representations remain separate extensions of the reusable pipeline.
 
-test latif
+test latif 2
