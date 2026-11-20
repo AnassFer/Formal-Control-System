@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <unordered_map>
+#include <queue>
 
 namespace robot_app {
 namespace {
@@ -66,6 +67,9 @@ symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec
     if (regions.empty()) {
         throw std::invalid_argument("Aucune region definie.");
     }
+    if (regions.size() >= 63) {
+        throw std::invalid_argument("Nombre maximal de regions depasse (62 max).");
+    }
 
     std::unordered_map<std::string, LabelId> nameToLabel;
     for (std::size_t i = 0; i < regions.size(); ++i) {
@@ -84,101 +88,135 @@ symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec
         }
     }
 
-    const auto visitFirst = resolveNames(mission.visitFirst, nameToLabel, "Visit first");
-    const auto thenGoTo = resolveNames(mission.thenGoTo, nameToLabel, "Then go to");
     const auto avoid = resolveNames(mission.avoid, nameToLabel, "Avoid");
 
-    if (visitFirst.empty()) {
-        throw std::invalid_argument("Le champ 'Visit first' doit contenir au moins une region.");
+    std::uint64_t allAvoidMask = 0ULL;
+    for (LabelId l : avoid) {
+        allAvoidMask |= (1ULL << l);
+    }
+    const bool useAvoidOr = mission.avoidOr && avoid.size() > 1;
+
+    struct ResolvedStage {
+        std::vector<LabelId> labels;
+        bool exclusive = false;
+    };
+    std::vector<ResolvedStage> stages;
+    for (std::size_t s = 0; s < mission.stages.size(); ++s) {
+        const std::string field = "Etape " + std::to_string(s + 1);
+        auto labels = resolveNames(mission.stages[s].regions, nameToLabel, field.c_str());
+        if (labels.empty()) {
+            continue;
+        }
+        for (LabelId l : labels) {
+            if (containsLabel(avoid, l)) {
+                throw std::invalid_argument(field + ": une region cible ne peut pas etre dans 'Avoid'.");
+            }
+        }
+        stages.push_back({std::move(labels), mission.stages[s].exclusive && labels.size() > 1});
     }
 
-    for (LabelId l : visitFirst) {
-        if (containsLabel(avoid, l) || containsLabel(thenGoTo, l)) {
-            throw std::invalid_argument("Une meme region apparait dans deux categories.");
-        }
-    }
-    for (LabelId l : thenGoTo) {
-        if (containsLabel(avoid, l)) {
-            throw std::invalid_argument("Une region de 'Then go to' ne peut pas etre dans 'Avoid'.");
-        }
+    if (stages.empty()) {
+        throw std::invalid_argument("La mission doit contenir au moins une etape non vide.");
     }
 
     const std::size_t totalLabels = regions.size() + 1;
+    constexpr AutomatonStateId kInit = 0;
+    constexpr AutomatonStateId kGoal = 1;
+    constexpr AutomatonStateId kSink = 2;
+
     Automaton automaton;
-    automaton.initialState = 0;
-
-    // Cas 1 : pas de "Then go to" -> atteignabilite + evitement
-    if (thenGoTo.empty()) {
-        constexpr AutomatonStateId kInit = 0;
-        constexpr AutomatonStateId kGoal = 1;
-        constexpr AutomatonStateId kSink = 2;
-        automaton.finalStates = {kGoal};
-        automaton.transitions.assign(3, std::vector<AutomatonStateId>(totalLabels));
-
-        for (std::size_t idx = 0; idx < totalLabels; ++idx) {
-            const LabelId l = static_cast<LabelId>(idx);
-            if (containsLabel(avoid, l)) {
-                automaton.transitions[kInit][idx] = kSink;
-            } else if (containsLabel(visitFirst, l)) {
-                automaton.transitions[kInit][idx] = kGoal;
-            } else {
-                automaton.transitions[kInit][idx] = kInit;
-            }
-            automaton.transitions[kGoal][idx] = kGoal;
-            automaton.transitions[kSink][idx] = kSink;
-        }
-        validateAutomaton(automaton);
-        return automaton;
-    }
-
-    // Cas 2 : "Visit first" -> "Then go to" (+ "Avoid")
-    const std::size_t branchCount = mission.visitFirstExclusive ? visitFirst.size() : 1;
-    const AutomatonStateId kInit = 0;
-    const AutomatonStateId kGoal = static_cast<AutomatonStateId>(1 + branchCount);
-    const AutomatonStateId kSink = static_cast<AutomatonStateId>(2 + branchCount);
-    const std::size_t stateCount = branchCount + 3;
-
+    automaton.initialState = kInit;
     automaton.finalStates = {kGoal};
-    automaton.transitions.assign(stateCount, std::vector<AutomatonStateId>(totalLabels));
-
-    for (std::size_t idx = 0; idx < totalLabels; ++idx) {
-        const LabelId l = static_cast<LabelId>(idx);
-        if (containsLabel(avoid, l)) {
-            automaton.transitions[kInit][idx] = kSink;
-        } else {
-            const auto it = std::find(visitFirst.begin(), visitFirst.end(), l);
-            if (it != visitFirst.end()) {
-                const std::size_t pos = static_cast<std::size_t>(it - visitFirst.begin());
-                automaton.transitions[kInit][idx] = mission.visitFirstExclusive
-                    ? static_cast<AutomatonStateId>(1 + pos)
-                    : AutomatonStateId{1};
-            } else {
-                automaton.transitions[kInit][idx] = kInit;
-            }
-        }
-    }
-
-    for (std::size_t branch = 0; branch < branchCount; ++branch) {
-        const AutomatonStateId q = static_cast<AutomatonStateId>(1 + branch);
-        for (std::size_t idx = 0; idx < totalLabels; ++idx) {
-            const LabelId l = static_cast<LabelId>(idx);
-            if (containsLabel(avoid, l)) {
-                automaton.transitions[q][idx] = kSink;
-            } else if (mission.visitFirstExclusive
-                       && containsLabel(visitFirst, l)
-                       && l != visitFirst[branch]) {
-                automaton.transitions[q][idx] = kSink;
-            } else if (containsLabel(thenGoTo, l)) {
-                automaton.transitions[q][idx] = kGoal;
-            } else {
-                automaton.transitions[q][idx] = q;
-            }
-        }
-    }
+    automaton.transitions.assign(3, std::vector<AutomatonStateId>(totalLabels, kSink));
 
     for (std::size_t idx = 0; idx < totalLabels; ++idx) {
         automaton.transitions[kGoal][idx] = kGoal;
         automaton.transitions[kSink][idx] = kSink;
+    }
+
+    struct DfaKey {
+        std::size_t stage;
+        std::uint64_t forbidden;
+        std::uint64_t visitedAvoid;
+        bool operator==(const DfaKey& o) const noexcept {
+            return stage == o.stage && forbidden == o.forbidden && visitedAvoid == o.visitedAvoid;
+        }
+    };
+
+    struct DfaKeyHash {
+        std::size_t operator()(const DfaKey& k) const noexcept {
+            std::size_t h = std::hash<std::size_t>{}(k.stage);
+            h ^= std::hash<std::uint64_t>{}(k.forbidden) + 0x9e3779b9ULL + (h << 6) + (h >> 2);
+            h ^= std::hash<std::uint64_t>{}(k.visitedAvoid) + 0x9e3779b9ULL + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
+
+    std::unordered_map<DfaKey, AutomatonStateId, DfaKeyHash> keyToId;
+    std::queue<std::pair<AutomatonStateId, DfaKey>> queue;
+
+    const DfaKey initKey{0, 0ULL, 0ULL};
+    keyToId.emplace(initKey, kInit);
+    queue.push({kInit, initKey});
+
+    while (!queue.empty()) {
+        const auto [q, key] = queue.front();
+        queue.pop();
+
+        const auto& currentStage = stages[key.stage];
+
+        for (std::size_t idx = 0; idx < totalLabels; ++idx) {
+            const LabelId l = static_cast<LabelId>(idx);
+
+            if (containsLabel(avoid, l)) {
+                if (!useAvoidOr) {
+                    automaton.transitions[q][idx] = kSink;
+                } else {
+                    const std::uint64_t nextVisited = key.visitedAvoid | (1ULL << l);
+                    if (nextVisited == allAvoidMask) {
+                        // Toutes les regions de Avoid ont ete touchees -> echec
+                        automaton.transitions[q][idx] = kSink;
+                    } else {
+                        const DfaKey nextKey{key.stage, key.forbidden, nextVisited};
+                        auto it = keyToId.find(nextKey);
+                        if (it == keyToId.end()) {
+                            const auto newId = static_cast<AutomatonStateId>(automaton.transitions.size());
+                            automaton.transitions.emplace_back(totalLabels, kSink);
+                            it = keyToId.emplace(nextKey, newId).first;
+                            queue.push({newId, nextKey});
+                        }
+                        automaton.transitions[q][idx] = it->second;
+                    }
+                }
+            } else if (l > 0 && ((key.forbidden >> l) & 1ULL) != 0ULL) {
+                automaton.transitions[q][idx] = kSink;
+            } else if (containsLabel(currentStage.labels, l)) {
+                const std::size_t nextStage = key.stage + 1;
+                if (nextStage == stages.size()) {
+                    automaton.transitions[q][idx] = kGoal;
+                } else {
+                    std::uint64_t nextForbidden = key.forbidden;
+                    if (currentStage.exclusive) {
+                        for (LabelId other : currentStage.labels) {
+                            if (other != l) {
+                                nextForbidden |= (1ULL << other);
+                            }
+                        }
+                    }
+                    const DfaKey nextKey{nextStage, nextForbidden, key.visitedAvoid};
+                    auto it = keyToId.find(nextKey);
+                    if (it == keyToId.end()) {
+                        const auto newId = static_cast<AutomatonStateId>(automaton.transitions.size());
+                        automaton.transitions.emplace_back(totalLabels, kSink);
+                        it = keyToId.emplace(nextKey, newId).first;
+                        queue.push({newId, nextKey});
+                    }
+                    automaton.transitions[q][idx] = it->second;
+                }
+            } else {
+                automaton.transitions[q][idx] = q;
+            }
+        }
     }
 
     validateAutomaton(automaton);
