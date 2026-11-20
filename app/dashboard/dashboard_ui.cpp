@@ -48,8 +48,9 @@ bool inputPositiveSizeT(const char* label, std::size_t& value, std::size_t minVa
     }
     return false;
 }
-
-bool drawDynamicRegionRow(const char* title, std::vector<std::string>& entries) {
+bool drawDynamicRegionRow(const char* title,
+                          std::vector<std::string>& entries,
+                          const char* op = "OU") {
     bool changed = false;
     if (entries.empty()) {
         entries.emplace_back("");
@@ -62,7 +63,7 @@ bool drawDynamicRegionRow(const char* title, std::vector<std::string>& entries) 
     for (std::size_t i = 0; i < entries.size(); ++i) {
         ImGui::SameLine();
         if (i > 0) {
-            ImGui::TextDisabled("OU");
+            ImGui::TextDisabled("%s", op);
             ImGui::SameLine();
         }
 
@@ -84,10 +85,11 @@ bool drawDynamicRegionRow(const char* title, std::vector<std::string>& entries) 
         changed = true;
     }
 
-    // Le bouton "+ OU" apparait uniquement lorsqu'un nom de boite est saisi
+    // Le bouton "+ OU" ou "+ ET" apparait uniquement lorsqu'un nom de boite est saisi
     if (!entries.back().empty()) {
         ImGui::SameLine();
-        if (ImGui::SmallButton("+ OU")) {
+        const std::string addLabel = std::string("+ ") + op;
+        if (ImGui::SmallButton(addLabel.c_str())) {
             entries.emplace_back("");
             changed = true;
         }
@@ -101,26 +103,27 @@ std::string buildMissionPreview(const MissionSpec& mission) {
     auto joinList = [](const std::vector<std::string>& list, const char* sep) {
         std::string out;
         for (const auto& item : list) {
-            if (item.empty()) {
-                continue;
-            }
-            if (!out.empty()) {
-                out += sep;
-            }
+            if (item.empty()) continue;
+            if (!out.empty()) out += sep;
             out += item;
         }
         return out;
     };
 
-    const std::string first = joinList(mission.visitFirst,
-                                       mission.visitFirstExclusive ? " XOR " : " OU ");
-    const std::string thenStr = joinList(mission.thenGoTo, " OU ");
-    const std::string avoidStr = joinList(mission.avoid, ", ");
-
-    std::string preview = first.empty() ? "(aucune cible)" : "(" + first + ")";
-    if (!thenStr.empty()) {
-        preview += "  ->  (" + thenStr + ")";
+    std::string preview;
+    for (std::size_t s = 0; s < mission.stages.size(); ++s) {
+        const auto& st = mission.stages[s];
+        const std::string part = joinList(st.regions, st.exclusive ? " XOR " : " OU ");
+        if (part.empty()) continue;
+        if (!preview.empty()) preview += "  ->  ";
+        preview += "(" + part + ")";
     }
+
+    if (preview.empty()) {
+        preview = "(aucune cible)";
+    }
+
+    const std::string avoidStr = joinList(mission.avoid, mission.avoidOr ? " OU " : " ET ");
     if (!avoidStr.empty()) {
         preview += "  |  Eviter {" + avoidStr + "}";
     }
@@ -277,14 +280,53 @@ void renderMissionSection(DashboardState& state) {
     }
 
     auto& mission = state.config.mission;
-    bool changed = false;
-
-    changed |= drawDynamicRegionRow("Visit first", mission.visitFirst);
-    if (mission.visitFirst.size() > 1) {
-        changed |= ImGui::Checkbox("Un seul parmi 'Visit first' (XOR)", &mission.visitFirstExclusive);
+    if (mission.stages.empty()) {
+        mission.stages.push_back({{""}, false});
     }
-    changed |= drawDynamicRegionRow("Then go to", mission.thenGoTo);
-    changed |= drawDynamicRegionRow("Avoid", mission.avoid);
+
+    bool changed = false;
+    int stageToRemove = -1;
+
+    for (std::size_t s = 0; s < mission.stages.size(); ++s) {
+        ImGui::PushID(static_cast<int>(s));
+        auto& st = mission.stages[s];
+
+        const char* label = (s == 0) ? "Visit first" : "Then go to";
+        changed |= drawDynamicRegionRow(label, st.regions);
+
+        if (mission.stages.size() > 1) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Suppr.")) {
+                stageToRemove = static_cast<int>(s);
+            }
+        }
+
+        if (st.regions.size() > 1) {
+            changed |= ImGui::Checkbox("Un seul parmi cette etape (XOR)", &st.exclusive);
+        } else {
+            st.exclusive = false;
+        }
+
+        ImGui::PopID();
+    }
+
+    if (stageToRemove >= 0) {
+        mission.stages.erase(mission.stages.begin() + stageToRemove);
+        changed = true;
+    }
+
+    if (ImGui::Button("+ Ajouter une etape (Then go to)")) {
+        mission.stages.push_back({{""}, false});
+        changed = true;
+    }
+
+    ImGui::Spacing();
+    changed |= drawDynamicRegionRow("Avoid", mission.avoid, mission.avoidOr ? "OU" : "ET");
+    if (mission.avoid.size() > 1) {
+        changed |= ImGui::Checkbox("Eviter au moins une (OU)", &mission.avoidOr);
+    } else {
+        mission.avoidOr = false;
+    }
 
     ImGui::Spacing();
     const std::string preview = buildMissionPreview(mission);
@@ -410,10 +452,24 @@ void renderPlotCanvas(DashboardState& state) {
     if (ImPlot::BeginPlot("Simulation du robot mobile (x1, x2)", avail, ImPlotFlags_Equal)) {
         ImPlot::SetupAxes("x1", "x2");
         const ImPlotCond cond = state.resetPlotLimits ? ImPlotCond_Always : ImPlotCond_Once;
-        const double padX = 0.05 * (cfg.x1Max - cfg.x1Min);
-        const double padY = 0.05 * (cfg.x2Max - cfg.x2Min);
-        ImPlot::SetupAxisLimits(ImAxis_X1, cfg.x1Min - padX, cfg.x1Max + padX, cond);
-        ImPlot::SetupAxisLimits(ImAxis_Y1, cfg.x2Min - padY, cfg.x2Max + padY, cond);
+        const double cx = 0.5 * (cfg.x1Min + cfg.x1Max);
+        const double cy = 0.5 * (cfg.x2Min + cfg.x2Max);
+        double halfX = 0.55 * (cfg.x1Max - cfg.x1Min); // +10% de marge totale
+        double halfY = 0.55 * (cfg.x2Max - cfg.x2Min);
+
+        // Adapte les bornes au ratio de la fenetre pour que ImPlotFlags_Equal ne rogne pas le carre blanc
+        const double plotW = std::max(1.0, static_cast<double>(avail.x) - 60.0);
+        const double plotH = std::max(1.0, static_cast<double>(avail.y) - 70.0);
+        const double aspect = plotW / plotH;
+
+        if (halfX / halfY < aspect) {
+            halfX = halfY * aspect;
+        } else {
+            halfY = halfX / aspect;
+        }
+
+        ImPlot::SetupAxisLimits(ImAxis_X1, cx - halfX, cx + halfX, cond);
+        ImPlot::SetupAxisLimits(ImAxis_Y1, cy - halfY, cy + halfY, cond);
         state.resetPlotLimits = false;
 
         ImDrawList* drawList = ImPlot::GetPlotDrawList();

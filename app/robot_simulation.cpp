@@ -337,9 +337,10 @@ RobotConfig makePaperDefaultConfig(bool fullPaperGrid) {
         {"R4", 3.0, 7.0, 3.0, 7.0, {0.95f, 0.45f, 0.30f, 0.50f}}
     };
 
-    cfg.mission.visitFirst = {"R1", "R2"};
-    cfg.mission.visitFirstExclusive = true;
-    cfg.mission.thenGoTo = {"R3"};
+    cfg.mission.stages = {
+        {{"R1", "R2"}, true}, // Etape 1 : R1 XOR R2
+        {{"R3"}, false}       // Etape 2 : puis R3
+    };
     cfg.mission.avoid = {"R4"};
     return cfg;
 }

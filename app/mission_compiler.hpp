@@ -19,11 +19,15 @@ struct RegionSpec {
     std::array<float, 4> color{0.2f, 0.6f, 0.9f, 0.35f};
 };
 
+struct MissionStage {
+    std::vector<std::string> regions;
+    bool exclusive = false;
+};
+
 struct MissionSpec {
-    std::vector<std::string> visitFirst;
-    bool visitFirstExclusive = true;
-    std::vector<std::string> thenGoTo;
+    std::vector<MissionStage> stages;
     std::vector<std::string> avoid;
+    bool avoidOr = false; // false = eviter TOUTES (ET), true = eviter AU MOINS UNE (OU)
 };
 
 symctrl::part2::Automaton compileMissionToAutomaton(const std::vector<RegionSpec>& regions,
