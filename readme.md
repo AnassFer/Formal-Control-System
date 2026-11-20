@@ -29,11 +29,11 @@ Numerical backends currently report `UncertifiedFloat`. Their formulas depend on
 
 ## Build and run
 
-Requirements on both platforms: a C/C++ compiler with C++17 support, **CMake 3.21 or newer**, **Git** on `PATH`, a build tool, and graphics drivers supporting **OpenGL 3.0 or newer**. Run the dashboard in a graphical desktop session.
+Requirements on all platforms: a C/C++ compiler with C++17 support, **CMake 3.21 or newer**, **Git** on `PATH`, a build tool, and graphics drivers supporting **OpenGL 3.0 or newer** on Windows/Ubuntu or **OpenGL 3.2** on macOS. Run the dashboard in a graphical desktop session.
 
 During the first CMake configuration, Git downloads **GLFW 3.4**, **Dear ImGui v1.90.9**, and **ImPlot v0.16** automatically. Internet access is required for that step. Do not install these libraries separately; no Python, pip, or Node.js packages are needed. CMake also detects the system thread library automatically.
 
-Run all build commands from the project root, the folder containing `CMakeLists.txt`. Use separate build directories for Windows and Ubuntu.
+Run all build commands from the project root, the folder containing `CMakeLists.txt`. Use separate build directories for Windows, Ubuntu, and macOS.
 
 ### Ubuntu: install dependencies
 
@@ -89,6 +89,45 @@ cmake --build build-windows --config Release --target robot_dashboard --parallel
 
 For this Windows generator, `--config Release` selects the build configuration, and the executable is inside the `Release` subdirectory. On Ubuntu, `-DCMAKE_BUILD_TYPE=Release` selects it during configuration. After source changes, rerun the build command before launching again.
 
+### macOS: install dependencies
+
+Install Apple's Command Line Tools for Xcode, which provide Apple Clang, Make, Git, and the macOS SDK:
+
+```bash
+xcode-select --install
+```
+
+Wait for the installer to finish before continuing. If the tools are already installed, skip that step. Install [CMake with Homebrew](https://formulae.brew.sh/formula/cmake) if you have a [supported Homebrew installation](https://docs.brew.sh/Installation):
+
+```bash
+brew install cmake
+cmake --version
+git --version
+```
+
+Alternatively, install CMake from the [official macOS download](https://cmake.org/download/). If you place `CMake.app` in `/Applications`, make its command-line tools available in the current terminal with:
+
+```bash
+export PATH="/Applications/CMake.app/Contents/bin:$PATH"
+cmake --version
+```
+
+The system SDK supplies OpenGL and the native frameworks GLFW needs. CMake downloads and builds GLFW, ImGui, and ImPlot automatically; no separate graphics library or XQuartz installation is needed.
+
+### macOS: build and run the robot dashboard
+
+Open Terminal in the project root on an Intel or Apple Silicon Mac:
+
+```bash
+cmake -S . -B build-macos -DCMAKE_BUILD_TYPE=Release
+cmake --build build-macos --target robot_dashboard --parallel 2
+./build-macos/robot_dashboard
+```
+
+Use a native terminal and toolchain for your Mac's architecture; CMake selects the native architecture by default. Start with a fresh build directory when switching operating systems or architectures.
+
+The dashboard selects an OpenGL 3.2 core, forward-compatible context with GLSL 150 on macOS, following the [Dear ImGui GLFW/OpenGL example](https://github.com/ocornut/imgui/blob/v1.90.9/examples/example_glfw_opengl3/main.cpp). macOS OpenGL deprecation warnings are silenced for the dashboard; the renderer still uses the system OpenGL framework.
+
 ### Command-line examples
 
 On Ubuntu, also build and run the robot CLI or the original model examples:
@@ -105,6 +144,14 @@ cmake --build build-ubuntu --target robot_cli symctrl_cli --parallel 2
 
 On Windows, build those targets with `cmake --build build-windows --config Release --target robot_cli symctrl_cli --parallel 2`, then use `.\build-windows\Release\robot_cli.exe` or `.\build-windows\Release\symctrl_cli.exe` with the same model arguments.
 
+On macOS:
+
+```bash
+cmake --build build-macos --target robot_cli symctrl_cli --parallel 2
+./build-macos/robot_cli
+./build-macos/symctrl_cli thermostat
+```
+
 | Command | What it does |
 | --- | --- |
 | `--help` | Prints the available commands. |
@@ -114,6 +161,10 @@ On Windows, build those targets with `cmake --build build-windows --config Relea
 | `export-thermostat DIRECTORY` | Builds the thermostat model and writes its metadata, cells, inputs, and transitions to the directory. |
 
 Exit codes are `0` for success, `1` for invalid usage or a reported exception, and `2` if a `NotImplemented` exception reaches the CLI. Build products and exports are generated files and are ignored by Git. There are no test sources, CTest targets, or readiness scripts in this cleaned project.
+
+### Generated files and local settings
+
+`.gitignore` excludes platform build directories (`build-ubuntu`, `build-windows`, `build-macos`), CMake output, compiled binaries, generated Xcode projects, local IDE settings, macOS/Windows metadata, `imgui.ini`, and the default simulation CSV exports. Your editor configuration and dashboard layout remain local; running the dashboard does not require a tracked `imgui.ini` file. Keep shared CMake presets in `CMakePresets.json`; personal overrides in `CMakeUserPresets.json` are ignored.
 
 ## Where the code lives
 

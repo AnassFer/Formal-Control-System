@@ -108,4 +108,7 @@ target_link_libraries(robot_dashboard PRIVATE
 )
 if(WIN32)
     target_compile_definitions(robot_dashboard PRIVATE NOMINMAX)
+elseif(APPLE)
+    # Use the macOS SDK's core OpenGL headers with the system OpenGL framework.
+    target_compile_definitions(robot_dashboard PRIVATE GLFW_INCLUDE_GLCOREARB GL_SILENCE_DEPRECATION)
 endif()
