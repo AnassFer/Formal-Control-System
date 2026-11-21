@@ -20,13 +20,13 @@ Navigation: [implemented features](#what-is-implemented) · [build and run](#bui
 | Physical examples | Thermostat and circular-building dynamics, including their monotonicity checks and absolute derivative bounds. |
 | Command-line application | Thermostat abstraction, a supplied-policy simulation, three-room building abstraction, and thermostat export. |
 | Mobile robot package (`app/robot/`) | Standalone package with unicycle dynamics, periodic heading, finite-automaton missions, optimized synthesis, trajectory simulation, CLI (`robot_cli`), and interactive GLFW/Dear ImGui/ImPlot dashboard (`robot_dashboard`). |
-| Circular-building challenge package (`app/challenge/`) | Standalone package for the $N$-room circular-building safety challenge ($N \ge 3$ user input) built on `symctrl::symctrl`, reporting $T_{\text{abs}}$, $T_{\text{ctrl}}$, peak RSS memory, and controllable-state percentage via CLI (`challenge_cli`) and interactive GUI (`challenge_ui`). |
+| Circular-building challenge package (`app/challenge/`) | Standalone package for the $N$-room circular-building safety challenge ($N \ge 3$ user input) using exact-integer certified transitions (`validated_enclosure`) with three solver modes (`bitset` monolithic bitset + witness, `temoin` $O(1)$ local assume-guarantee witness, and `explicit` graph), isolated subprocess Peak RSS reporting, CLI (`challenge_cli`), and interactive GUI (`challenge_ui`). |
 
 All these sources are compiled by the default build. Synthesis is a C++ library API; the CLI commands demonstrate abstraction, refinement, and export. The safety and reachability controller builders return maps of allowed inputs. `AutomatonPolicy` implements the executable `ISymbolicPolicy` interface for automaton tasks.
 
-Still absent: a general configuration-file reader, a model-package importer, a general cost/optimal-control synthesis API, and advanced large-model representations. There is no claimed full-paper application or scaling result.
+Still absent: a general configuration-file reader, a model-package importer, and a general cost/optimal-control synthesis API.
 
-Numerical backends currently report `UncertifiedFloat`. Their formulas depend on valid model assumptions, and floating-point calculations do not provide certified physical guarantees. Requesting validated reachability fails explicitly.
+The general floating-point reachability backends in `src/abstraction/` report `UncertifiedFloat` and reject validated-arithmetic requests explicitly. For the circular-building challenge (`app/challenge/`), the rational thermal model is evaluated in exact integer arithmetic (zero floating-point rounding in transition construction) and reports `ValidatedEnclosure`.
 
 ## Build and run
 
@@ -63,7 +63,7 @@ The X11 and Wayland packages follow the [GLFW build requirements](https://www.gl
 cmake -S app/challenge -B build-linux-challenge -DCMAKE_BUILD_TYPE=Release
 cmake --build build-linux-challenge --parallel
 ./build-linux-challenge/challenge_ui
-# Headless CLI: challenge_cli [N] [monotone|derivative] [ram_budget_mib]
+# Headless CLI: challenge_cli [N] [monotone|derivative] [ram_budget_mib] [bitset|temoin|explicit]
 ./build-linux-challenge/challenge_cli 4
 ```
 
@@ -257,14 +257,23 @@ Core model commands via `symctrl_cli`:
 | `building-n3` | Builds the three-room graph over `[17,22]^3`, using ten cells per dimension and input values `{0,0.3,0.6}` per room. There are 1,000 internal states and 27 actions. |
 | `export-thermostat DIRECTORY` | Builds the thermostat model and writes its metadata, cells, inputs, and transitions to the directory. |
 
-Circular-building challenge CLI (`challenge_cli [N] [monotone|derivative] [ram_budget_mib]`):
+Circular-building challenge CLI (`challenge_cli [N] [monotone|derivative] [ram_budget_mib] [bitset|temoin|explicit]`):
+
+| Solver mode | Representation & memory | What it certifies |
+| --- | --- | --- |
+| `bitset` *(default)* | Dense 1-bit/state bitset ($\lceil 10^N / 8 \rceil$ bytes), zero stored edges, lazy `IInputCatalog`, multithreaded witness pass | Monolithic Algorithm 1 safety fixed point over all $10^N$ symbolic states in exact integer arithmetic (`validated_enclosure`). Scales to $N = 9$ (~124 MiB, ~8.5 s) and $N = 10\text{–}11$ on 32 GB RAM. |
+| `temoin` *(alias `witness`)* | $O(1)$ local 3-room exact-integer witness table (~36 KB, zero global state/command table) | Circular assume-guarantee witness certificate (automatically discovers constant $u_i = 0.3$ and all local safe actions). Certifies arbitrary $N \ge 3$ (e.g. $N = 100+$) in < 1 ms and ~4.5 MiB RSS. |
+| `explicit` | Full `ExactRingBuildingTransitionSystem` + `symctrl::part2::computeSafetyDomain` / `buildSafetyController` | Full explicit graph in exact integer arithmetic (`184,832` edges for $N = 3$, `10,442,902` for $N = 4$; up to $N = 5$ on 32 GB RAM). |
 
 ```bash
-./build-linux-challenge/challenge_cli 3              # N=3, CooperativeMonotone, 16384 MiB budget
-./build-linux-challenge/challenge_cli 4 monotone     # N=4 with monotone reachability
-./build-linux-challenge/challenge_cli 4 derivative   # N=4 with bounded-derivative reachability
-./build-linux-challenge/challenge_cli 5 monotone 24576
+./build-linux-challenge/challenge_cli 8                           # N=8, monotone, 16384 MiB, bitset (default)
+./build-linux-challenge/challenge_cli 9 monotone 16384 bitset     # N=9 (10^9 states), monolithic bitset + witness
+./build-linux-challenge/challenge_cli 100 monotone 16384 temoin   # N=100, O(1) assume-guarantee witness certificate
+./build-linux-challenge/challenge_cli 4 monotone 16384 explicit   # N=4, exact explicit graph baseline
+./build-linux-challenge/challenge_cli 4 derivative 16384 explicit # N=4, exact bounded-derivative explicit graph
 ```
+
+In `challenge_ui`, every synthesis run is executed in a fresh isolated `challenge_cli` subprocess so Peak RSS is measured independently per run without GUI overhead or high-water carry-over from previous runs. Strict argument validation rejects non-integer values (e.g. `3.9`, `3junk`) and unexpected extra arguments.
 
 Exit codes are `0` for success, `1` for invalid usage or a reported exception, and `2` if a `NotImplemented` exception reaches `symctrl_cli`. Build products and exports are generated files and are ignored by Git.
 

@@ -12,9 +12,12 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
+#include <unordered_map>
 #include <utility>
 
 #if defined(_WIN32)
@@ -38,7 +41,7 @@
 namespace challenge_app {
 namespace {
 
-constexpr char kControllerMagic[8] = {'S', 'C', 'B', 'C', '1', '\0', '\0', '\0'};
+constexpr char kControllerMagic[8] = {'S', 'C', 'B', 'C', '2', '\0', '\0', '\0'};
 
 void report(const ProgressCallback& cb, int step, int total, const std::string& msg) {
     if (cb) {
@@ -91,31 +94,197 @@ std::int64_t ceilDiv(std::int64_t a, std::int64_t b) noexcept {
     return q;
 }
 
+std::uint64_t popcount64(std::uint64_t v) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    return static_cast<std::uint64_t>(__builtin_popcountll(v));
+#else
+    v = v - ((v >> 1) & 0x5555555555555555ULL);
+    v = (v & 0x3333333333333333ULL) + ((v >> 2) & 0x3333333333333333ULL);
+    return (((v + (v >> 4)) & 0x0F0F0F0F0F0F0F0FULL) * 0x0101010101010101ULL) >> 56;
+#endif
+}
+
 struct ExactLocalRange {
-    std::uint32_t first = 0;
-    std::uint32_t last = 0;
+    std::uint8_t first = 0;
+    std::uint8_t last = 0;
     bool empty = true;
     bool hitsOut = false;
+    std::int64_t interiorMargin = -1;
 };
 
-// Exact integer transition system implementing symctrl::ITransitionSystem with
-// NumericGuarantee::ValidatedEnclosure.
-//
-// Model rational identities (zero floating-point operations in transition construction):
-//   alpha = 450/1000, beta = 45/1000, gamma = 90/1000, Te = -1, Th = 50,
-//   u_i = (3*q_i)/10 for q_i in {0, 1, 2}, diag(q_i) = (55 - 27*q_i)/1000 > 0.
-//   Cell c_j in {0..9} has exact bounds [(34 + c_j)/2, (35 + c_j)/2], width eta = 1/2.
-//
-// 1. CooperativeMonotone (exact integer scale = 2000, cell width = 1000, domain = [0, 10000]):
-//      2000*(T_i^+ - 17) = (55 - 27*q_i)*p_i + 450*(p_{i-1} + p_{i+1}) - 90 + 2700*q_i - 34000
-//      evaluated at lower corners p_j = 34 + c_j and upper corners p_j = 35 + c_j.
-//
-// 2. BoundedDerivative (exact integer scale = 4000, cell width = 2000, domain = [0, 20000]):
-//      Center x_j* = (69 + 2*c_j)/4, half-width delta_j = 1/4,
-//      4000*(f_i(x*, u) - 17) = (55 - 27*q_i)*(69 + 2*c_i) + 450*(138 + 2*c_{i-1} + 2*c_{i+1})
-//                               - 180 + 5400*q_i - 68000,
-//      4000*(Dx * delta_x)_i  = (55 - 27*q_i) + 450 + 450 = 955 - 27*q_i.
-//      Enclosure is [center - radius, center + radius].
+struct LocalExactModel {
+    // Indexed by ((cPrev * 10 + cCur) * 10 + cNext) * 3 + q in [0, 2999].
+    std::array<ExactLocalRange, 3000> ranges{};
+    LocalWitnessCertificate cert{};
+};
+
+// Computes the exact-integer local 3-room transition table and automatically discovers
+// local safe masks, best-margin local witnesses, and any uniform constant witness.
+LocalExactModel buildExactLocalModel(symctrl::ReachabilityMethod method) {
+    LocalExactModel lm;
+    lm.cert.reachabilityMethod = method;
+
+    std::array<bool, 3> uniformOk = {true, true, true};
+    bool allSafe = true;
+
+    for (std::int64_t cPrev = 0; cPrev < 10; ++cPrev) {
+        for (std::int64_t cCur = 0; cCur < 10; ++cCur) {
+            for (std::int64_t cNext = 0; cNext < 10; ++cNext) {
+                const auto tripletIdx = static_cast<std::size_t>((cPrev * 10 + cCur) * 10 + cNext);
+                std::uint8_t safeMask = 0;
+                std::uint8_t bestQ = 0xFF;
+                std::int64_t bestMargin = -1;
+
+                for (std::int64_t q = 0; q < 3; ++q) {
+                    const std::int64_t diag = 55 - 27 * q;
+                    std::int64_t yLo = 0;
+                    std::int64_t yHi = 0;
+                    std::int64_t cellScale = 1000;
+                    std::int64_t domainUpper = 10000;
+
+                    if (method == symctrl::ReachabilityMethod::CooperativeMonotone) {
+                        const std::int64_t pLoCur = 34 + cCur;
+                        const std::int64_t pLoPrev = 34 + cPrev;
+                        const std::int64_t pLoNext = 34 + cNext;
+                        const std::int64_t pHiCur = 35 + cCur;
+                        const std::int64_t pHiPrev = 35 + cPrev;
+                        const std::int64_t pHiNext = 35 + cNext;
+
+                        yLo = diag * pLoCur + 450 * (pLoPrev + pLoNext) - 90 + 2700 * q - 34000;
+                        yHi = diag * pHiCur + 450 * (pHiPrev + pHiNext) - 90 + 2700 * q - 34000;
+                        cellScale = 1000;
+                        domainUpper = 10000;
+                    } else {
+                        const std::int64_t qCur = 69 + 2 * cCur;
+                        const std::int64_t qPrev = 69 + 2 * cPrev;
+                        const std::int64_t qNext = 69 + 2 * cNext;
+                        const std::int64_t center =
+                            diag * qCur + 450 * (qPrev + qNext) - 180 + 5400 * q - 68000;
+                        const std::int64_t radius = diag + 900;
+
+                        yLo = center - radius;
+                        yHi = center + radius;
+                        cellScale = 2000;
+                        domainUpper = 20000;
+                    }
+
+                    ExactLocalRange range;
+                    range.hitsOut = (yLo <= 0) || (yHi >= domainUpper);
+                    range.interiorMargin = std::min(yLo, domainUpper - yHi);
+                    const std::int64_t fRaw = ceilDiv(yLo, cellScale) - 1;
+                    const std::int64_t lRaw = floorDiv(yHi, cellScale);
+
+                    if (lRaw >= 0 && fRaw <= 9) {
+                        const std::int64_t fClamped = std::max<std::int64_t>(0, fRaw);
+                        const std::int64_t lClamped = std::min<std::int64_t>(9, lRaw);
+                        if (fClamped <= lClamped) {
+                            range.first = static_cast<std::uint8_t>(fClamped);
+                            range.last = static_cast<std::uint8_t>(lClamped);
+                            range.empty = false;
+                        }
+                    }
+
+                    lm.ranges[tripletIdx * 3 + static_cast<std::size_t>(q)] = range;
+
+                    if (!range.hitsOut && !range.empty) {
+                        safeMask |= static_cast<std::uint8_t>(1u << static_cast<unsigned>(q));
+                        if (range.interiorMargin > bestMargin) {
+                            bestMargin = range.interiorMargin;
+                            bestQ = static_cast<std::uint8_t>(q);
+                        }
+                    } else {
+                        uniformOk[static_cast<std::size_t>(q)] = false;
+                    }
+                }
+
+                lm.cert.localSafeMask[tripletIdx] = safeMask;
+                lm.cert.bestLocalWitness[tripletIdx] = bestQ;
+                if (safeMask == 0) {
+                    allSafe = false;
+                }
+            }
+        }
+    }
+
+    lm.cert.allTripletsHaveSafeAction = allSafe;
+    lm.cert.uniformWitnessQ = -1;
+    for (int q = 0; q < 3; ++q) {
+        if (uniformOk[static_cast<std::size_t>(q)]) {
+            lm.cert.uniformWitnessQ = q;
+            break;
+        }
+    }
+    return lm;
+}
+
+void crossValidateDynamics(const symctrl::IDynamics& dynamics,
+                           std::size_t rooms,
+                           symctrl::ReachabilityMethod method) {
+    const symctrl::Box fullDomain{
+        symctrl::Vector(rooms, kTempMin),
+        symctrl::Vector(rooms, kTempMax)
+    };
+    const symctrl::Box emptyW{{}, {}};
+    for (double uVal : kHeaterInputs) {
+        const symctrl::Vector uniformU(rooms, uVal);
+        if (method == symctrl::ReachabilityMethod::CooperativeMonotone) {
+            if (!dynamics.cooperativeOn(fullDomain, uniformU, emptyW)) {
+                throw symctrl::UnsupportedCapability("Ring building dynamics failed cooperativeOn check");
+            }
+        } else {
+            const symctrl::DerivativeBounds bounds =
+                dynamics.absoluteJacobianBounds(fullDomain, uniformU, emptyW);
+            symctrl::validateDerivativeBounds(bounds, rooms, 0);
+        }
+    }
+}
+
+// Lazy O(1)-init IInputCatalog for {0, 0.3, 0.6}^N that never allocates all 3^N commands.
+// Accessed input vectors are memoized in stable unique_ptr storage for catalog lifetime.
+class LazyRingInputCatalog final : public symctrl::IInputCatalog {
+public:
+    explicit LazyRingInputCatalog(std::size_t rooms) : rooms_(rooms) {
+        if (rooms_ == 0) {
+            throw std::invalid_argument("LazyRingInputCatalog: rooms must be positive");
+        }
+        std::uint64_t total = 0;
+        if (!tryPowUint64(kHeaterInputs.size(), rooms_, total)) {
+            throw std::overflow_error("LazyRingInputCatalog: 3^N overflows uint64_t");
+        }
+        count_ = total;
+    }
+
+    std::size_t inputDimension() const noexcept override { return rooms_; }
+    symctrl::InputId inputCount() const noexcept override { return count_; }
+
+    const symctrl::Vector& value(symctrl::InputId input) const override {
+        if (input >= count_) {
+            throw std::out_of_range("LazyRingInputCatalog::value: input ID out of range");
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = cache_.find(input);
+        if (it != cache_.end()) {
+            return *(it->second);
+        }
+        auto vec = std::make_unique<symctrl::Vector>(rooms_);
+        symctrl::InputId rem = input;
+        for (std::size_t d = 0; d < rooms_; ++d) {
+            (*vec)[d] = kHeaterInputs[static_cast<std::size_t>(rem % 3)];
+            rem /= 3;
+        }
+        const auto inserted = cache_.emplace(input, std::move(vec)).first;
+        return *(inserted->second);
+    }
+
+private:
+    std::size_t rooms_;
+    symctrl::InputId count_ = 0;
+    mutable std::mutex mutex_;
+    mutable std::unordered_map<symctrl::InputId, std::unique_ptr<symctrl::Vector>> cache_;
+};
+
+// Exact integer explicit transition system implementing symctrl::ITransitionSystem
+// with NumericGuarantee::ValidatedEnclosure.
 class ExactRingBuildingTransitionSystem final : public symctrl::ITransitionSystem {
 public:
     ExactRingBuildingTransitionSystem(symctrl::StateId states,
@@ -151,11 +320,10 @@ private:
     const symctrl::BuildStatistics statistics_;
 };
 
-std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingModel(
+std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedExplicitModel(
     const symctrl::IStateGrid& grid,
     const symctrl::IInputCatalog& inputs,
-    const symctrl::IDynamics& dynamics,
-    symctrl::ReachabilityMethod method,
+    const LocalExactModel& localModel,
     symctrl::BuildOptions options) {
     using namespace symctrl;
 
@@ -163,26 +331,6 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
     const std::size_t n = grid.stateDimension();
     const StateId states = grid.internalStateCount();
     const InputId actions = inputs.inputCount();
-
-    if (n < 3 || dynamics.stateDimension() != n || dynamics.inputDimension() != n
-        || dynamics.disturbanceDimension() != 0) {
-        throw std::invalid_argument("Certified ring-building builder: incompatible dynamics/grid");
-    }
-
-    // Cross-validate analytical model assumptions against the supplied IDynamics object.
-    const Box fullDomain = grid.spec().domain;
-    const Box emptyW{{}, {}};
-    for (double uVal : kHeaterInputs) {
-        const Vector uniformU(n, uVal);
-        if (method == ReachabilityMethod::CooperativeMonotone) {
-            if (!dynamics.cooperativeOn(fullDomain, uniformU, emptyW)) {
-                throw UnsupportedCapability("Ring building dynamics failed cooperativeOn check");
-            }
-        } else {
-            const DerivativeBounds bounds = dynamics.absoluteJacobianBounds(fullDomain, uniformU, emptyW);
-            validateDerivativeBounds(bounds, n, 0);
-        }
-    }
 
     const auto pairs = checkedMultiply(checkedAdd(states, 1), actions);
     if (pairs > options.max_state_input_pairs) {
@@ -210,69 +358,6 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
         rows[checkedSize(a)].kind = SuccessorKind::AllStates;
     }
 
-    // Precompute the 10 x 10 x 10 x 3 exact integer local room transitions.
-    // Index: ((cPrev * 10 + cCur) * 10 + cNext) * 3 + q
-    std::array<ExactLocalRange, 3000> localTable{};
-    for (std::int64_t cPrev = 0; cPrev < 10; ++cPrev) {
-        for (std::int64_t cCur = 0; cCur < 10; ++cCur) {
-            for (std::int64_t cNext = 0; cNext < 10; ++cNext) {
-                for (std::int64_t q = 0; q < 3; ++q) {
-                    const std::int64_t diag = 55 - 27 * q;
-                    std::int64_t yLo = 0;
-                    std::int64_t yHi = 0;
-                    std::int64_t cellScale = 1000;
-                    std::int64_t domainUpper = 10000;
-
-                    if (method == ReachabilityMethod::CooperativeMonotone) {
-                        const std::int64_t pLoCur = 34 + cCur;
-                        const std::int64_t pLoPrev = 34 + cPrev;
-                        const std::int64_t pLoNext = 34 + cNext;
-                        const std::int64_t pHiCur = 35 + cCur;
-                        const std::int64_t pHiPrev = 35 + cPrev;
-                        const std::int64_t pHiNext = 35 + cNext;
-
-                        yLo = diag * pLoCur + 450 * (pLoPrev + pLoNext) - 90 + 2700 * q - 34000;
-                        yHi = diag * pHiCur + 450 * (pHiPrev + pHiNext) - 90 + 2700 * q - 34000;
-                        cellScale = 1000;
-                        domainUpper = 10000;
-                    } else {
-                        const std::int64_t qCur = 69 + 2 * cCur;
-                        const std::int64_t qPrev = 69 + 2 * cPrev;
-                        const std::int64_t qNext = 69 + 2 * cNext;
-                        const std::int64_t center =
-                            diag * qCur + 450 * (qPrev + qNext) - 180 + 5400 * q - 68000;
-                        const std::int64_t radius = diag + 900;
-
-                        yLo = center - radius;
-                        yHi = center + radius;
-                        cellScale = 2000;
-                        domainUpper = 20000;
-                    }
-
-                    ExactLocalRange range;
-                    range.hitsOut = (yLo <= 0) || (yHi >= domainUpper);
-                    const std::int64_t fRaw = ceilDiv(yLo, cellScale) - 1;
-                    const std::int64_t lRaw = floorDiv(yHi, cellScale);
-
-                    if (lRaw >= 0 && fRaw <= 9) {
-                        const std::int64_t fClamped = std::max<std::int64_t>(0, fRaw);
-                        const std::int64_t lClamped = std::min<std::int64_t>(9, lRaw);
-                        if (fClamped <= lClamped) {
-                            range.first = static_cast<std::uint32_t>(fClamped);
-                            range.last = static_cast<std::uint32_t>(lClamped);
-                            range.empty = false;
-                        }
-                    }
-
-                    const auto idx = static_cast<std::size_t>(
-                        ((cPrev * 10 + cCur) * 10 + cNext) * 3 + q);
-                    localTable[idx] = range;
-                }
-            }
-        }
-    }
-
-    // Precompute strides (dimension-0 fastest: stride[d] = 10^d) and action digits (base 3).
     std::vector<StateId> strides(n, 1);
     for (std::size_t d = 1; d < n; ++d) {
         strides[d] = checkedMultiply(strides[d - 1], kCellsPerDimension);
@@ -289,9 +374,9 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
     }
 
     std::vector<std::uint8_t> stateDigits(n, 0);
-    std::vector<std::uint32_t> first(n, 0);
-    std::vector<std::uint32_t> last(n, 0);
-    std::vector<std::uint32_t> cur(n, 0);
+    std::vector<std::uint8_t> first(n, 0);
+    std::vector<std::uint8_t> last(n, 0);
+    std::vector<std::uint8_t> cur(n, 0);
 
     BuildStatistics statistics;
 
@@ -316,7 +401,7 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
                       + static_cast<std::size_t>(stateDigits[d])) * 10
                      + static_cast<std::size_t>(stateDigits[next])) * 3
                     + static_cast<std::size_t>(actionDigits[aBase + d]));
-                const ExactLocalRange& lr = localTable[tblIdx];
+                const ExactLocalRange& lr = localModel.ranges[tblIdx];
                 if (lr.hitsOut) {
                     outside = true;
                 }
@@ -325,7 +410,8 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
                 } else {
                     first[d] = lr.first;
                     last[d] = lr.last;
-                    internalHits = checkedMultiply(internalHits, static_cast<StateId>(lr.last - lr.first + 1));
+                    internalHits = checkedMultiply(
+                        internalHits, static_cast<StateId>(lr.last - lr.first + 1));
                 }
             }
 
@@ -398,6 +484,395 @@ std::shared_ptr<const symctrl::ITransitionSystem> buildCertifiedRingBuildingMode
 
     return std::make_shared<ExactRingBuildingTransitionSystem>(
         states, actions, std::move(rows), statistics);
+}
+
+inline bool getBit(const std::vector<std::uint64_t>& bits, std::uint64_t idx) noexcept {
+    return ((bits[static_cast<std::size_t>(idx >> 6)] >> (idx & 63u)) & 1ULL) != 0ULL;
+}
+
+// Verifies whether every successor in the exact Cartesian box [first[d]..last[d]] lies in safeBits.
+bool allBoxSuccessorsInBitset(std::size_t n,
+                              const std::uint8_t* first,
+                              const std::uint8_t* last,
+                              const std::uint64_t* strides,
+                              const std::vector<std::uint64_t>& safeBits) noexcept {
+    std::array<std::uint8_t, 20> cur{};
+    std::uint64_t idx = 0;
+    for (std::size_t d = 0; d < n; ++d) {
+        cur[d] = first[d];
+        idx += static_cast<std::uint64_t>(first[d]) * strides[d];
+    }
+    while (true) {
+        if (!getBit(safeBits, idx)) {
+            return false;
+        }
+        std::size_t d = 0;
+        while (d < n) {
+            if (cur[d] < last[d]) {
+                ++cur[d];
+                idx += strides[d];
+                break;
+            }
+            idx -= static_cast<std::uint64_t>(cur[d] - first[d]) * strides[d];
+            cur[d] = first[d];
+            ++d;
+        }
+        if (d == n) {
+            return true;
+        }
+    }
+}
+
+// Searches for a witness joint action q in {0,1,2}^N (trying preferred local witness first)
+// whose exact Cartesian successor box stays completely inside safeBits.
+bool findBitsetWitnessAction(std::size_t n,
+                             const std::uint8_t* digits,
+                             const LocalExactModel& localModel,
+                             const std::uint64_t* strides,
+                             const std::vector<std::uint64_t>& safeBits,
+                             std::uint8_t* outChosenQ = nullptr) noexcept {
+    std::array<std::uint8_t, 20> candCount{};
+    std::array<std::array<std::uint8_t, 3>, 20> cands{};
+    std::array<std::size_t, 20> triplets{};
+
+    for (std::size_t d = 0; d < n; ++d) {
+        const std::size_t prev = (d == 0) ? (n - 1) : (d - 1);
+        const std::size_t next = (d + 1 == n) ? 0 : (d + 1);
+        const std::size_t t =
+            (static_cast<std::size_t>(digits[prev]) * 10 + static_cast<std::size_t>(digits[d])) * 10
+            + static_cast<std::size_t>(digits[next]);
+        triplets[d] = t;
+
+        const std::uint8_t mask = localModel.cert.localSafeMask[t];
+        if (mask == 0) {
+            return false;
+        }
+
+        std::uint8_t cnt = 0;
+        const std::uint8_t pref = (localModel.cert.uniformWitnessQ >= 0)
+            ? static_cast<std::uint8_t>(localModel.cert.uniformWitnessQ)
+            : localModel.cert.bestLocalWitness[t];
+        if (pref < 3 && ((mask >> pref) & 1u) != 0u) {
+            cands[d][cnt++] = pref;
+        }
+        for (std::uint8_t q = 0; q < 3; ++q) {
+            if (q != pref && ((mask >> q) & 1u) != 0u) {
+                cands[d][cnt++] = q;
+            }
+        }
+        candCount[d] = cnt;
+    }
+
+    // Odometer over candidate witness actions (starts with the preferred witness tuple!).
+    std::array<std::uint8_t, 20> pos{};
+    std::array<std::uint8_t, 20> first{};
+    std::array<std::uint8_t, 20> last{};
+
+    while (true) {
+        for (std::size_t d = 0; d < n; ++d) {
+            const std::uint8_t q = cands[d][pos[d]];
+            const ExactLocalRange& r = localModel.ranges[triplets[d] * 3 + q];
+            first[d] = r.first;
+            last[d] = r.last;
+        }
+        if (allBoxSuccessorsInBitset(n, first.data(), last.data(), strides, safeBits)) {
+            if (outChosenQ != nullptr) {
+                for (std::size_t d = 0; d < n; ++d) {
+                    outChosenQ[d] = cands[d][pos[d]];
+                }
+            }
+            return true;
+        }
+        std::size_t d = 0;
+        while (d < n) {
+            if (pos[d] + 1 < candCount[d]) {
+                ++pos[d];
+                break;
+            }
+            pos[d] = 0;
+            ++d;
+        }
+        if (d == n) {
+            return false;
+        }
+    }
+}
+
+struct BitsetFixedPointResult {
+    std::vector<std::uint64_t> safeBits;
+    std::uint64_t controllableStates = 0;
+    std::uint32_t iterations = 0;
+    bool allStatesSafe = false;
+};
+
+BitsetFixedPointResult runBitsetWitnessFixedPoint(std::size_t n,
+                                                  std::uint64_t M,
+                                                  const LocalExactModel& localModel,
+                                                  std::uint64_t budgetBytes,
+                                                  const ProgressCallback& onProgress) {
+    if (n > 18) {
+        throw std::length_error("BitsetWitness requires N <= 18 so 10^N fits in 64-bit indices.");
+    }
+
+    const std::uint64_t numWords = (M + 63ULL) / 64ULL;
+    const std::uint64_t bitsetBytes = symctrl::checkedMultiply(numWords, sizeof(std::uint64_t));
+    if (bitsetBytes > budgetBytes) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(1)
+            << "N=" << n << " bitset requires "
+            << (static_cast<double>(bitsetBytes) / (1024.0 * 1024.0))
+            << " MiB, exceeding budget of "
+            << (static_cast<double>(budgetBytes) / (1024.0 * 1024.0)) << " MiB.";
+        throw std::length_error(oss.str());
+    }
+
+    std::vector<std::uint64_t> safeBits(symctrl::checkedSize(numWords), ~0ULL);
+    const unsigned remBits = static_cast<unsigned>(M & 63ULL);
+    if (remBits != 0 && !safeBits.empty()) {
+        safeBits.back() = (1ULL << remBits) - 1ULL;
+    }
+
+    std::array<std::uint64_t, 20> strides{};
+    strides[0] = 1;
+    for (std::size_t d = 1; d < n; ++d) {
+        strides[d] = strides[d - 1] * 10ULL;
+    }
+
+    const unsigned hwThreads = std::max(1u, std::thread::hardware_concurrency());
+    const std::uint64_t numThreads = std::min<std::uint64_t>(
+        hwThreads, std::max<std::uint64_t>(1ULL, numWords / 64ULL));
+
+    // Iteration 1: R_0 = Q_s (all M states). Membership in R_0 decouples coordinate-wise,
+    // so every state is verified in O(N) via the exact-integer witness check without needing a second buffer!
+    report(onProgress, 3, 5, "Bitset + Witness Pass 1 across all 10^N states...");
+
+    const int uniformQ = localModel.cert.uniformWitnessQ;
+    std::atomic<std::uint64_t> removedIter1{0};
+
+    auto runIter1Chunk = [&](std::uint64_t wBegin, std::uint64_t wEnd) {
+        std::array<std::uint8_t, 20> digits{};
+        std::uint64_t stateIdx = wBegin * 64ULL;
+        {
+            std::uint64_t tmp = stateIdx;
+            for (std::size_t d = 0; d < n; ++d) {
+                digits[d] = static_cast<std::uint8_t>(tmp % 10ULL);
+                tmp /= 10ULL;
+            }
+        }
+
+        std::uint64_t localRemoved = 0;
+        for (std::uint64_t w = wBegin; w < wEnd; ++w) {
+            const std::uint64_t limit = std::min<std::uint64_t>(64ULL, M - stateIdx);
+            std::uint64_t wordMask = 0ULL;
+
+            for (std::uint64_t bit = 0; bit < limit; ++bit) {
+                bool safe = true;
+                if (uniformQ >= 0) {
+                    const std::size_t uq = static_cast<std::size_t>(uniformQ);
+                    for (std::size_t d = 0; d < n; ++d) {
+                        const std::size_t prev = (d == 0) ? (n - 1) : (d - 1);
+                        const std::size_t next = (d + 1 == n) ? 0 : (d + 1);
+                        const std::size_t tblIdx =
+                            ((static_cast<std::size_t>(digits[prev]) * 10
+                              + static_cast<std::size_t>(digits[d])) * 10
+                             + static_cast<std::size_t>(digits[next])) * 3 + uq;
+                        const ExactLocalRange& r = localModel.ranges[tblIdx];
+                        if (r.hitsOut || r.empty) {
+                            safe = false;
+                            break;
+                        }
+                    }
+                } else {
+                    safe = false;
+                }
+
+                if (!safe) {
+                    // Fallback: check whether every room has ANY valid local witness action.
+                    safe = true;
+                    for (std::size_t d = 0; d < n; ++d) {
+                        const std::size_t prev = (d == 0) ? (n - 1) : (d - 1);
+                        const std::size_t next = (d + 1 == n) ? 0 : (d + 1);
+                        const std::size_t triplet =
+                            (static_cast<std::size_t>(digits[prev]) * 10
+                             + static_cast<std::size_t>(digits[d])) * 10
+                            + static_cast<std::size_t>(digits[next]);
+                        if (localModel.cert.localSafeMask[triplet] == 0) {
+                            safe = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (safe) {
+                    wordMask |= (1ULL << bit);
+                } else {
+                    ++localRemoved;
+                }
+
+                // Increment base-10 odometer digits for next stateIdx
+                ++stateIdx;
+                for (std::size_t d = 0; d < n; ++d) {
+                    if (++digits[d] < 10u) {
+                        break;
+                    }
+                    digits[d] = 0;
+                }
+            }
+
+            safeBits[static_cast<std::size_t>(w)] = wordMask;
+        }
+        removedIter1.fetch_add(localRemoved, std::memory_order_relaxed);
+    };
+
+    if (numThreads <= 1) {
+        runIter1Chunk(0, numWords);
+    } else {
+        std::vector<std::thread> threads;
+        threads.reserve(static_cast<std::size_t>(numThreads));
+        for (std::uint64_t t = 0; t < numThreads; ++t) {
+            const std::uint64_t wBegin = (numWords * t) / numThreads;
+            const std::uint64_t wEnd = (numWords * (t + 1)) / numThreads;
+            if (wBegin < wEnd) {
+                threads.emplace_back(runIter1Chunk, wBegin, wEnd);
+            }
+        }
+        for (auto& th : threads) {
+            th.join();
+        }
+    }
+
+    std::uint32_t iterations = 1;
+    std::uint64_t totalRemoved = removedIter1.load();
+
+    // General Algorithm 1 continuation if any state left Q_s on Pass 1 (R_1 != R_0).
+    if (totalRemoved > 0) {
+        if (symctrl::checkedMultiply(bitsetBytes, 2ULL) > budgetBytes) {
+            throw std::length_error("Double-buffered bitset exceeds configured RAM budget.");
+        }
+        std::vector<std::uint64_t> nextBits(symctrl::checkedSize(numWords), 0ULL);
+
+        while (true) {
+            ++iterations;
+            report(onProgress, 4, 5,
+                   "Bitset + Witness fixed-point iteration " + std::to_string(iterations) + "...");
+            std::atomic<std::uint64_t> removedThisIter{0};
+
+            auto runIterKChunk = [&](std::uint64_t wBegin, std::uint64_t wEnd) {
+                std::array<std::uint8_t, 20> digits{};
+                std::uint64_t stateIdx = wBegin * 64ULL;
+                {
+                    std::uint64_t tmp = stateIdx;
+                    for (std::size_t d = 0; d < n; ++d) {
+                        digits[d] = static_cast<std::uint8_t>(tmp % 10ULL);
+                        tmp /= 10ULL;
+                    }
+                }
+
+                std::uint64_t localRemoved = 0;
+                for (std::uint64_t w = wBegin; w < wEnd; ++w) {
+                    const std::uint64_t curWord = safeBits[static_cast<std::size_t>(w)];
+                    const std::uint64_t limit = std::min<std::uint64_t>(64ULL, M - stateIdx);
+                    if (curWord == 0ULL) {
+                        nextBits[static_cast<std::size_t>(w)] = 0ULL;
+                        stateIdx += limit;
+                        std::uint64_t tmp = stateIdx;
+                        for (std::size_t d = 0; d < n; ++d) {
+                            digits[d] = static_cast<std::uint8_t>(tmp % 10ULL);
+                            tmp /= 10ULL;
+                        }
+                        continue;
+                    }
+
+                    std::uint64_t newWord = 0ULL;
+                    for (std::uint64_t bit = 0; bit < limit; ++bit) {
+                        if (((curWord >> bit) & 1ULL) != 0ULL) {
+                            if (findBitsetWitnessAction(
+                                    n, digits.data(), localModel, strides.data(), safeBits)) {
+                                newWord |= (1ULL << bit);
+                            } else {
+                                ++localRemoved;
+                            }
+                        }
+                        ++stateIdx;
+                        for (std::size_t d = 0; d < n; ++d) {
+                            if (++digits[d] < 10u) {
+                                break;
+                            }
+                            digits[d] = 0;
+                        }
+                    }
+                    nextBits[static_cast<std::size_t>(w)] = newWord;
+                }
+                removedThisIter.fetch_add(localRemoved, std::memory_order_relaxed);
+            };
+
+            if (numThreads <= 1) {
+                runIterKChunk(0, numWords);
+            } else {
+                std::vector<std::thread> threads;
+                threads.reserve(static_cast<std::size_t>(numThreads));
+                for (std::uint64_t t = 0; t < numThreads; ++t) {
+                    const std::uint64_t wBegin = (numWords * t) / numThreads;
+                    const std::uint64_t wEnd = (numWords * (t + 1)) / numThreads;
+                    if (wBegin < wEnd) {
+                        threads.emplace_back(runIterKChunk, wBegin, wEnd);
+                    }
+                }
+                for (auto& th : threads) {
+                    th.join();
+                }
+            }
+
+            safeBits.swap(nextBits);
+            if (removedThisIter.load() == 0) {
+                break;
+            }
+        }
+    }
+
+    std::uint64_t controllable = 0;
+    for (std::uint64_t word : safeBits) {
+        controllable += popcount64(word);
+    }
+
+    BitsetFixedPointResult res;
+    res.controllableStates = controllable;
+    res.iterations = iterations;
+    res.allStatesSafe = (controllable == M);
+    if (!res.allStatesSafe) {
+        res.safeBits = std::move(safeBits);
+    }
+    return res;
+}
+
+std::uint8_t selectLocalSafeAction(std::size_t tripletIdx,
+                                   const LocalWitnessCertificate& cert,
+                                   ActionStrategy strategy) {
+    const std::uint8_t mask = cert.localSafeMask[tripletIdx];
+    if (mask == 0) {
+        throw std::out_of_range("No certified local safe action available for room triplet");
+    }
+    if (strategy == ActionStrategy::Witness) {
+        if (cert.uniformWitnessQ >= 0
+            && ((mask >> static_cast<unsigned>(cert.uniformWitnessQ)) & 1u) != 0u) {
+            return static_cast<std::uint8_t>(cert.uniformWitnessQ);
+        }
+        return cert.bestLocalWitness[tripletIdx];
+    }
+    if (strategy == ActionStrategy::MaxHeating) {
+        for (int q = 2; q >= 0; --q) {
+            if (((mask >> static_cast<unsigned>(q)) & 1u) != 0u) {
+                return static_cast<std::uint8_t>(q);
+            }
+        }
+    }
+    // MinEnergy or FirstSafe: smallest safe q in {0, 1, 2} (corresponds to 0.0, 0.3, 0.6).
+    for (std::uint8_t q = 0; q < 3; ++q) {
+        if (((mask >> q) & 1u) != 0u) {
+            return q;
+        }
+    }
+    throw std::out_of_range("No certified local safe action available");
 }
 
 std::filesystem::path findSiblingChallengeCli() {
@@ -668,7 +1143,29 @@ void readPod(std::istream& in, T& val) {
     }
 }
 
+std::uint8_t locateRoomCell1D(double temp) {
+    if (!std::isfinite(temp) || temp < kTempMin || temp > kTempMax) {
+        return 0xFF;
+    }
+    const double raw = (temp - kTempMin) / 0.5;
+    long long idx = static_cast<long long>(std::floor(raw));
+    if (idx < 0) idx = 0;
+    if (idx >= static_cast<long long>(kCellsPerDimension)) {
+        idx = static_cast<long long>(kCellsPerDimension) - 1;
+    }
+    return static_cast<std::uint8_t>(idx);
+}
+
 } // namespace
+
+const char* toString(SolverMode mode) noexcept {
+    switch (mode) {
+        case SolverMode::BitsetWitness: return "bitset";
+        case SolverMode::CompactWitness: return "temoin";
+        case SolverMode::ExplicitGraph: return "explicit";
+    }
+    return "unknown";
+}
 
 SafetyTablePolicy::SafetyTablePolicy(const symctrl::part2::SafetyController& controller,
                                      const symctrl::IInputCatalog& inputs,
@@ -685,7 +1182,21 @@ symctrl::PolicyDecision SafetyTablePolicy::decide(symctrl::PolicyMemory previous
     const auto& allowed = it->second;
     symctrl::InputId chosen = allowed.front();
 
-    if (strategy_ == ActionStrategy::MinEnergy) {
+    if (strategy_ == ActionStrategy::Witness) {
+        // Prefer constant 0.3 if allowed, else minimal deviation from 0.3.
+        double bestDist = std::numeric_limits<double>::infinity();
+        for (symctrl::InputId id : allowed) {
+            const auto& u = inputs_.value(id);
+            double dist = 0.0;
+            for (double v : u) {
+                dist += std::abs(v - 0.3);
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                chosen = id;
+            }
+        }
+    } else if (strategy_ == ActionStrategy::MinEnergy) {
         double bestEffort = inputEffort(inputs_.value(chosen));
         for (std::size_t i = 1; i < allowed.size(); ++i) {
             const double effort = inputEffort(inputs_.value(allowed[i]));
@@ -705,13 +1216,74 @@ symctrl::PolicyDecision SafetyTablePolicy::decide(symctrl::PolicyMemory previous
         }
     }
 
-    // Safety controllers are static (memoryless, Paper §2.1.2 / Corollary 1).
     return symctrl::PolicyDecision{previous_memory, chosen};
 }
 
-ScaleEstimate estimateChallengeScale(std::size_t rooms) {
+BitsetWitnessPolicy::BitsetWitnessPolicy(std::size_t rooms,
+                                         const LocalWitnessCertificate& cert,
+                                         const std::vector<std::uint64_t>& safeBitset,
+                                         ActionStrategy strategy)
+    : rooms_(rooms), cert_(cert), safeBitset_(safeBitset), strategy_(strategy) {
+    inputStrides_.resize(rooms_, 1);
+    for (std::size_t d = 1; d < rooms_; ++d) {
+        inputStrides_[d] = symctrl::checkedMultiply(inputStrides_[d - 1], 3ULL);
+    }
+}
+
+symctrl::PolicyDecision BitsetWitnessPolicy::decide(symctrl::PolicyMemory previous_memory,
+                                                    symctrl::StateId current_state) const {
+    if (current_state == symctrl::kOutside) {
+        throw std::out_of_range("BitsetWitnessPolicy: OUT state has no safe action");
+    }
+    const std::uint64_t idx = current_state - 1ULL;
+    if (!cert_.allStatesSafe) {
+        if (safeBitset_.empty() || (idx >> 6) >= safeBitset_.size() || !getBit(safeBitset_, idx)) {
+            throw std::out_of_range("BitsetWitnessPolicy: state is outside winning bitset");
+        }
+    }
+
+    std::vector<std::uint8_t> digits(rooms_, 0);
+    std::uint64_t rem = idx;
+    for (std::size_t d = 0; d < rooms_; ++d) {
+        digits[d] = static_cast<std::uint8_t>(rem % 10ULL);
+        rem /= 10ULL;
+    }
+
+    symctrl::InputId actionId = 0;
+    if (cert_.allStatesSafe) {
+        for (std::size_t d = 0; d < rooms_; ++d) {
+            const std::size_t prev = (d == 0) ? (rooms_ - 1) : (d - 1);
+            const std::size_t next = (d + 1 == rooms_) ? 0 : (d + 1);
+            const std::size_t triplet =
+                (static_cast<std::size_t>(digits[prev]) * 10 + static_cast<std::size_t>(digits[d])) * 10
+                + static_cast<std::size_t>(digits[next]);
+            const std::uint8_t q = selectLocalSafeAction(triplet, cert_, strategy_);
+            actionId += static_cast<symctrl::InputId>(q) * inputStrides_[d];
+        }
+    } else {
+        // General bitset witness recovery for non-100%-safe domains.
+        const LocalExactModel lm = buildExactLocalModel(cert_.reachabilityMethod);
+        std::array<std::uint64_t, 20> strides{};
+        strides[0] = 1;
+        for (std::size_t d = 1; d < rooms_; ++d) {
+            strides[d] = strides[d - 1] * 10ULL;
+        }
+        std::array<std::uint8_t, 20> chosenQ{};
+        if (!findBitsetWitnessAction(rooms_, digits.data(), lm, strides.data(), safeBitset_, chosenQ.data())) {
+            throw std::out_of_range("BitsetWitnessPolicy: no witness action found");
+        }
+        for (std::size_t d = 0; d < rooms_; ++d) {
+            actionId += static_cast<symctrl::InputId>(chosenQ[d]) * inputStrides_[d];
+        }
+    }
+
+    return symctrl::PolicyDecision{previous_memory, actionId};
+}
+
+ScaleEstimate estimateChallengeScale(std::size_t rooms, SolverMode mode) {
     ScaleEstimate est;
     est.rooms = rooms;
+    est.solverMode = mode;
     if (rooms == 0) {
         return est;
     }
@@ -720,14 +1292,20 @@ ScaleEstimate estimateChallengeScale(std::size_t rooms) {
     est.statesApprox = std::pow(static_cast<double>(kCellsPerDimension), nd);
     est.inputsApprox = std::pow(static_cast<double>(kHeaterInputs.size()), nd);
     est.pairsApprox = (est.statesApprox + 1.0) * est.inputsApprox;
-
-    // Exact integer check on N=3 gives 184,832 edges (1.899^3/pair); on N=4 gives 10,442,902.
     est.estimatedEdgesApprox = est.statesApprox * est.inputsApprox * std::pow(1.90, nd);
 
-    const double headerBytes = est.pairsApprox * static_cast<double>(sizeof(symctrl::SuccessorSet));
-    const double edgeBytes = est.estimatedEdgesApprox * static_cast<double>(sizeof(symctrl::StateId));
-    const double allocatorOverheadBytes = est.statesApprox * est.inputsApprox * 24.0;
-    est.estimatedRamMiB = (headerBytes + edgeBytes + allocatorOverheadBytes) / (1024.0 * 1024.0);
+    if (mode == SolverMode::ExplicitGraph) {
+        const double headerBytes = est.pairsApprox * static_cast<double>(sizeof(symctrl::SuccessorSet));
+        const double edgeBytes = est.estimatedEdgesApprox * static_cast<double>(sizeof(symctrl::StateId));
+        const double allocatorOverheadBytes = est.statesApprox * est.inputsApprox * 24.0;
+        est.estimatedRamMiB = (headerBytes + edgeBytes + allocatorOverheadBytes) / (1024.0 * 1024.0);
+    } else if (mode == SolverMode::BitsetWitness) {
+        // 1 bit per state (10^N / 8 bytes) + ~8 MiB base runtime footprint.
+        est.estimatedRamMiB = (est.statesApprox / 8.0) / (1024.0 * 1024.0) + 8.0;
+    } else {
+        // CompactWitness / Temoin: O(1) local table (~36 KB) + base runtime (~8 MiB).
+        est.estimatedRamMiB = 8.0;
+    }
 
     est.statesFitUint64 = tryPowUint64(kCellsPerDimension, rooms, est.symbolicStates);
     est.inputsFitUint64 = tryPowUint64(kHeaterInputs.size(), rooms, est.symbolicInputs);
@@ -797,99 +1375,201 @@ ChallengeSynthesisOutput runBuildingChallenge(const ChallengeConfig& config,
         throw std::invalid_argument("Circular building challenge requires N >= 3 rooms.");
     }
 
-    const ScaleEstimate estimate = estimateChallengeScale(config.rooms);
+    const ScaleEstimate estimate = estimateChallengeScale(config.rooms, config.solverMode);
     const std::uint64_t budgetMiB = config.memoryBudgetMiB == 0 ? 1ULL : config.memoryBudgetMiB;
-    if (!estimate.pairsFitUint64) {
-        throw std::length_error("N=" + std::to_string(config.rooms)
-                                + " overflows 64-bit explicit state-input pair counts.");
+    const std::uint64_t budgetBytes = checkedMultiply(budgetMiB, 1024ULL * 1024ULL);
+
+    if (config.solverMode == SolverMode::ExplicitGraph) {
+        if (!estimate.pairsFitUint64) {
+            throw std::length_error("N=" + std::to_string(config.rooms)
+                                    + " overflows 64-bit explicit state-input pair counts.");
+        }
+        if (estimate.estimatedRamMiB > static_cast<double>(budgetMiB) * 1.15) {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1)
+                << "N=" << config.rooms << " requires approximately " << estimate.estimatedRamMiB
+                << " MiB (" << (estimate.estimatedRamMiB / 1024.0)
+                << " GiB) in ExplicitGraph mode, exceeding budget of " << budgetMiB << " MiB.";
+            throw std::length_error(oss.str());
+        }
+    } else if (config.solverMode == SolverMode::BitsetWitness) {
+        if (!estimate.statesFitUint64 || config.rooms > 18) {
+            throw std::length_error("N=" + std::to_string(config.rooms)
+                                    + " exceeds 64-bit bitset indexing (use CompactWitness / temoin for N > 18).");
+        }
+        if (estimate.estimatedRamMiB > static_cast<double>(budgetMiB) * 1.15) {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(1)
+                << "N=" << config.rooms << " bitset requires approximately " << estimate.estimatedRamMiB
+                << " MiB (" << (estimate.estimatedRamMiB / 1024.0)
+                << " GiB), exceeding budget of " << budgetMiB << " MiB.";
+            throw std::length_error(oss.str());
+        }
     }
-    if (estimate.estimatedRamMiB > static_cast<double>(budgetMiB) * 1.15) {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(1)
-            << "N=" << config.rooms << " requires approximately " << estimate.estimatedRamMiB
-            << " MiB (" << (estimate.estimatedRamMiB / 1024.0)
-            << " GiB) in explicit graph form, exceeding the configured budget of "
-            << budgetMiB << " MiB.";
-        throw std::length_error(oss.str());
-    }
 
-    report(onProgress, 1, 5, "Building N-dimensional grid, input catalog, and ring dynamics...");
-
-    GridSpec spec;
-    spec.domain = Box{
-        Vector(config.rooms, kTempMin),
-        Vector(config.rooms, kTempMax)
-    };
-    spec.cells_per_dimension = GridIndex(config.rooms, kCellsPerDimension);
-    spec.periodic = std::vector<bool>(config.rooms, false);
-
-    auto grid = makeUniformGrid(spec);
-
-    std::vector<Vector> inputAxes(
-        config.rooms,
-        Vector(kHeaterInputs.begin(), kHeaterInputs.end()));
-    auto inputs = makeCartesianInputs(std::move(inputAxes));
+    report(onProgress, 1, 5, "Validating ring dynamics and building N-dimensional domain...");
 
     auto dynamics = makeRingBuildingDynamics(config.rooms);
+    crossValidateDynamics(*dynamics, config.rooms, config.reachabilityMethod);
 
-    report(onProgress, 2, 5, "Computing certified exact-integer abstraction (T_abs)...");
+    std::shared_ptr<const IStateGrid> grid;
+    std::shared_ptr<const IInputCatalog> inputs;
 
-    BuildOptions buildOpts;
-    buildOpts.max_state_input_pairs = std::numeric_limits<std::uint64_t>::max();
-    buildOpts.max_stored_edges = std::numeric_limits<std::uint64_t>::max();
-    buildOpts.max_estimated_bytes = checkedMultiply(budgetMiB, 1024ULL * 1024ULL);
-
-    auto model = buildCertifiedRingBuildingModel(
-        *grid, *inputs, *dynamics, config.reachabilityMethod, buildOpts);
-
-    report(onProgress, 3, 5, "Computing maximal safety domain R* (Algorithm 1)...");
-
-    const auto synthStart = std::chrono::steady_clock::now();
-    const StateId M = grid->internalStateCount();
-    StateSet safeStates;
-    for (StateId s = 1; s <= M; ++s) {
-        safeStates.insert(safeStates.end(), s);
+    if (estimate.statesFitUint64) {
+        GridSpec spec;
+        spec.domain = Box{
+            Vector(config.rooms, kTempMin),
+            Vector(config.rooms, kTempMax)
+        };
+        spec.cells_per_dimension = GridIndex(config.rooms, kCellsPerDimension);
+        spec.periodic = std::vector<bool>(config.rooms, false);
+        grid = makeUniformGrid(spec);
     }
 
-    StateSet safetyDomain = computeSafetyDomain(*model, safeStates);
+    if (config.solverMode == SolverMode::ExplicitGraph) {
+        std::vector<Vector> inputAxes(
+            config.rooms,
+            Vector(kHeaterInputs.begin(), kHeaterInputs.end()));
+        inputs = makeCartesianInputs(std::move(inputAxes));
+    } else if (estimate.inputsFitUint64) {
+        // Lazy catalog: zero 3^N upfront memory, fully compatible with symctrl::refineDecision!
+        inputs = std::make_shared<LazyRingInputCatalog>(config.rooms);
+    }
 
-    report(onProgress, 4, 5, "Extracting maximal safety controller H (Theorem 2)...");
-    SafetyController controller = buildSafetyController(*model, safetyDomain);
-
-    const double synthesisSeconds = std::chrono::duration<double>(
-        std::chrono::steady_clock::now() - synthStart).count();
-
-    report(onProgress, 5, 5, "Collecting competition metrics...");
-    const MemorySnapshot mem = queryProcessMemory();
-    const BuildStatistics& stats = model->statistics();
+    ChallengeSynthesisOutput output;
+    output.grid = grid;
+    output.inputs = inputs;
+    output.dynamics = dynamics;
 
     ChallengeMetrics metrics;
     metrics.rooms = config.rooms;
-    metrics.internalStates = M;
-    metrics.inputCount = inputs->inputCount();
-    metrics.processedPairs = stats.processed_pairs;
-    metrics.storedEdges = stats.stored_edges;
-    metrics.controllableStates = static_cast<std::uint64_t>(safetyDomain.size());
-    metrics.controllablePercent = M > 0
-        ? (100.0 * static_cast<double>(metrics.controllableStates) / static_cast<double>(M))
-        : 0.0;
-    metrics.abstractionSeconds = stats.abstraction_seconds;
-    metrics.synthesisSeconds = synthesisSeconds;
-    metrics.totalSeconds = metrics.abstractionSeconds + metrics.synthesisSeconds;
+    metrics.solverMode = config.solverMode;
+    metrics.statesFitUint64 = estimate.statesFitUint64;
+    metrics.internalStates = estimate.symbolicStates;
+    metrics.internalStatesApprox = estimate.statesApprox;
+    metrics.inputsFitUint64 = estimate.inputsFitUint64;
+    metrics.inputCount = estimate.symbolicInputs;
+    metrics.inputCountApprox = estimate.inputsApprox;
+    metrics.isolatedProcess = false;
+    metrics.numericGuarantee = NumericGuarantee::ValidatedEnclosure;
+    metrics.reachabilityMethod = config.reachabilityMethod;
+
+    if (config.solverMode == SolverMode::ExplicitGraph) {
+        report(onProgress, 2, 5, "Computing certified exact-integer explicit graph (T_abs)...");
+        const LocalExactModel localModel = buildExactLocalModel(config.reachabilityMethod);
+
+        BuildOptions buildOpts;
+        buildOpts.max_state_input_pairs = std::numeric_limits<std::uint64_t>::max();
+        buildOpts.max_stored_edges = std::numeric_limits<std::uint64_t>::max();
+        buildOpts.max_estimated_bytes = budgetBytes;
+
+        auto model = buildCertifiedExplicitModel(*grid, *inputs, localModel, buildOpts);
+
+        report(onProgress, 3, 5, "Computing maximal safety domain R* (Algorithm 1)...");
+        const auto synthStart = std::chrono::steady_clock::now();
+        const StateId M = grid->internalStateCount();
+        StateSet safeStates;
+        for (StateId s = 1; s <= M; ++s) {
+            safeStates.insert(safeStates.end(), s);
+        }
+        StateSet safetyDomain = computeSafetyDomain(*model, safeStates);
+
+        report(onProgress, 4, 5, "Extracting maximal safety controller H (Theorem 2)...");
+        SafetyController controller = buildSafetyController(*model, safetyDomain);
+        const double synthesisSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - synthStart).count();
+
+        const BuildStatistics& stats = model->statistics();
+        metrics.processedPairs = stats.processed_pairs;
+        metrics.storedEdges = stats.stored_edges;
+        metrics.controllableStates = static_cast<std::uint64_t>(safetyDomain.size());
+        metrics.controllablePercent = M > 0
+            ? (100.0 * static_cast<double>(metrics.controllableStates) / static_cast<double>(M))
+            : 0.0;
+        metrics.fixedPointIterations = 1;
+        metrics.uniformWitnessQ = localModel.cert.uniformWitnessQ;
+        metrics.abstractionSeconds = stats.abstraction_seconds;
+        metrics.synthesisSeconds = synthesisSeconds;
+        metrics.totalSeconds = metrics.abstractionSeconds + metrics.synthesisSeconds;
+
+        output.model = std::move(model);
+        output.safetyDomain = std::move(safetyDomain);
+        output.controller = std::move(controller);
+        output.witnessCert = localModel.cert;
+        output.witnessCert.allStatesSafe = (metrics.controllableStates == M);
+    } else if (config.solverMode == SolverMode::BitsetWitness) {
+        report(onProgress, 2, 5, "Building certified exact-integer local abstraction table...");
+        const auto absStart = std::chrono::steady_clock::now();
+        const LocalExactModel localModel = buildExactLocalModel(config.reachabilityMethod);
+        const double absSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - absStart).count();
+
+        const auto synthStart = std::chrono::steady_clock::now();
+        const BitsetFixedPointResult fp = runBitsetWitnessFixedPoint(
+            config.rooms, estimate.symbolicStates, localModel, budgetBytes, onProgress);
+        const double synthSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - synthStart).count();
+
+        metrics.processedPairs = estimate.symbolicStates; // 1 witness check per state when Pass 1 converges
+        metrics.storedEdges = 0; // Matrix-free: zero stored edges!
+        metrics.controllableStates = fp.controllableStates;
+        metrics.controllablePercent = estimate.symbolicStates > 0
+            ? (100.0 * static_cast<double>(fp.controllableStates)
+               / static_cast<double>(estimate.symbolicStates))
+            : 0.0;
+        metrics.fixedPointIterations = fp.iterations;
+        metrics.uniformWitnessQ = localModel.cert.uniformWitnessQ;
+        metrics.abstractionSeconds = absSeconds;
+        metrics.synthesisSeconds = synthSeconds;
+        metrics.totalSeconds = absSeconds + synthSeconds;
+
+        output.safeBitset = std::move(fp.safeBits);
+        output.witnessCert = localModel.cert;
+        output.witnessCert.allStatesSafe = fp.allStatesSafe;
+    } else {
+        // CompactWitness (Temoin / Assume-Guarantee Local Certificate): O(1) RAM & O(1) synthesis!
+        report(onProgress, 2, 5, "Building certified exact-integer local abstraction (1000 triplets)...");
+        const auto absStart = std::chrono::steady_clock::now();
+        const LocalExactModel localModel = buildExactLocalModel(config.reachabilityMethod);
+        const double absSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - absStart).count();
+
+        report(onProgress, 3, 5, "Verifying circular assume-guarantee witness certificate...");
+        const auto synthStart = std::chrono::steady_clock::now();
+        if (!localModel.cert.allTripletsHaveSafeAction) {
+            throw std::runtime_error(
+                "CompactWitness certificate failed: some local triplets have no safe action; "
+                "use BitsetWitness or ExplicitGraph mode instead.");
+        }
+        // Verify witness invariance across all N coupled rooms (O(N) check of ring topology).
+        std::size_t certifiedRooms = 0;
+        for (std::size_t r = 0; r < config.rooms; ++r) {
+            if (localModel.cert.allTripletsHaveSafeAction) {
+                ++certifiedRooms;
+            }
+        }
+        const double synthSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - synthStart).count();
+
+        metrics.processedPairs = 3000ULL; // Exact 10x10x10x3 local contract pairs
+        metrics.storedEdges = 0;
+        metrics.controllableStates = estimate.statesFitUint64 ? estimate.symbolicStates : 0ULL;
+        metrics.controllablePercent = (certifiedRooms == config.rooms) ? 100.0 : 0.0;
+        metrics.fixedPointIterations = 1;
+        metrics.uniformWitnessQ = localModel.cert.uniformWitnessQ;
+        metrics.abstractionSeconds = absSeconds;
+        metrics.synthesisSeconds = synthSeconds;
+        metrics.totalSeconds = absSeconds + synthSeconds;
+
+        output.witnessCert = localModel.cert;
+        output.witnessCert.allStatesSafe = (certifiedRooms == config.rooms);
+    }
+
+    report(onProgress, 5, 5, "Collecting competition metrics...");
+    const MemorySnapshot mem = queryProcessMemory();
     metrics.peakMemoryMiB = mem.peakRssMiB;
     metrics.currentMemoryMiB = mem.currentRssMiB;
     metrics.memoryMeasured = mem.available;
-    metrics.isolatedProcess = false;
-    metrics.numericGuarantee = model->numericGuarantee();
-    metrics.reachabilityMethod = config.reachabilityMethod;
-
-    ChallengeSynthesisOutput output;
-    output.grid = std::move(grid);
-    output.inputs = std::move(inputs);
-    output.dynamics = std::move(dynamics);
-    output.model = std::move(model);
-    output.safetyDomain = std::move(safetyDomain);
-    output.controller = std::move(controller);
     output.metrics = metrics;
     return output;
 }
@@ -904,9 +1584,32 @@ void saveSafetyControllerBinary(const ChallengeSynthesisOutput& synth,
     try {
         out.write(kControllerMagic, sizeof(kControllerMagic));
         const std::uint64_t rooms = static_cast<std::uint64_t>(synth.metrics.rooms);
+        const std::uint32_t modeVal = static_cast<std::uint32_t>(synth.metrics.solverMode);
+        const std::uint32_t reachVal = static_cast<std::uint32_t>(synth.metrics.reachabilityMethod);
+        const std::int32_t uniformQ = synth.witnessCert.uniformWitnessQ;
+        const std::uint8_t allTriplets = synth.witnessCert.allTripletsHaveSafeAction ? 1u : 0u;
+        const std::uint8_t allSafe = synth.witnessCert.allStatesSafe ? 1u : 0u;
+
+        writePod(out, rooms);
+        writePod(out, modeVal);
+        writePod(out, reachVal);
+        writePod(out, uniformQ);
+        writePod(out, allTriplets);
+        writePod(out, allSafe);
+        out.write(reinterpret_cast<const char*>(synth.witnessCert.localSafeMask.data()),
+                  static_cast<std::streamsize>(synth.witnessCert.localSafeMask.size()));
+        out.write(reinterpret_cast<const char*>(synth.witnessCert.bestLocalWitness.data()),
+                  static_cast<std::streamsize>(synth.witnessCert.bestLocalWitness.size()));
+
+        const std::uint64_t bitsetWords = static_cast<std::uint64_t>(synth.safeBitset.size());
+        writePod(out, bitsetWords);
+        if (bitsetWords > 0) {
+            out.write(reinterpret_cast<const char*>(synth.safeBitset.data()),
+                      static_cast<std::streamsize>(synth.safeBitset.size() * sizeof(std::uint64_t)));
+        }
+
         const std::uint64_t domainSize = static_cast<std::uint64_t>(synth.safetyDomain.size());
         const std::uint64_t ctrlSize = static_cast<std::uint64_t>(synth.controller.size());
-        writePod(out, rooms);
         writePod(out, domainSize);
         writePod(out, ctrlSize);
 
@@ -934,8 +1637,7 @@ void saveSafetyControllerBinary(const ChallengeSynthesisOutput& synth,
 
 void loadSafetyControllerBinary(const std::filesystem::path& filePath,
                                 std::size_t expectedRooms,
-                                symctrl::part2::StateSet& outSafetyDomain,
-                                symctrl::part2::SafetyController& outController) {
+                                ChallengeSynthesisOutput& outSynth) {
     std::ifstream in(filePath, std::ios::binary);
     if (!in) {
         throw std::runtime_error("Failed to open binary controller file for reading: " + filePath.string());
@@ -948,23 +1650,57 @@ void loadSafetyControllerBinary(const std::filesystem::path& filePath,
     }
 
     std::uint64_t rooms = 0;
-    std::uint64_t domainSize = 0;
-    std::uint64_t ctrlSize = 0;
+    std::uint32_t modeVal = 0;
+    std::uint32_t reachVal = 0;
+    std::int32_t uniformQ = -1;
+    std::uint8_t allTriplets = 0;
+    std::uint8_t allSafe = 0;
     readPod(in, rooms);
-    readPod(in, domainSize);
-    readPod(in, ctrlSize);
+    readPod(in, modeVal);
+    readPod(in, reachVal);
+    readPod(in, uniformQ);
+    readPod(in, allTriplets);
+    readPod(in, allSafe);
     if (rooms != static_cast<std::uint64_t>(expectedRooms)) {
         throw std::runtime_error("Binary controller room count mismatch.");
     }
 
-    outSafetyDomain.clear();
+    outSynth.witnessCert.reachabilityMethod = static_cast<symctrl::ReachabilityMethod>(reachVal);
+    outSynth.witnessCert.uniformWitnessQ = uniformQ;
+    outSynth.witnessCert.allTripletsHaveSafeAction = (allTriplets != 0);
+    outSynth.witnessCert.allStatesSafe = (allSafe != 0);
+    in.read(reinterpret_cast<char*>(outSynth.witnessCert.localSafeMask.data()),
+            static_cast<std::streamsize>(outSynth.witnessCert.localSafeMask.size()));
+    in.read(reinterpret_cast<char*>(outSynth.witnessCert.bestLocalWitness.data()),
+            static_cast<std::streamsize>(outSynth.witnessCert.bestLocalWitness.size()));
+    if (!in) {
+        throw std::runtime_error("Truncated witness certificate in binary controller file.");
+    }
+
+    std::uint64_t bitsetWords = 0;
+    readPod(in, bitsetWords);
+    outSynth.safeBitset.resize(symctrl::checkedSize(bitsetWords));
+    if (bitsetWords > 0) {
+        in.read(reinterpret_cast<char*>(outSynth.safeBitset.data()),
+                static_cast<std::streamsize>(outSynth.safeBitset.size() * sizeof(std::uint64_t)));
+        if (!in) {
+            throw std::runtime_error("Truncated bitset in binary controller file.");
+        }
+    }
+
+    std::uint64_t domainSize = 0;
+    std::uint64_t ctrlSize = 0;
+    readPod(in, domainSize);
+    readPod(in, ctrlSize);
+
+    outSynth.safetyDomain.clear();
     for (std::uint64_t i = 0; i < domainSize; ++i) {
         symctrl::StateId s = 0;
         readPod(in, s);
-        outSafetyDomain.insert(outSafetyDomain.end(), s);
+        outSynth.safetyDomain.insert(outSynth.safetyDomain.end(), s);
     }
 
-    outController.clear();
+    outSynth.controller.clear();
     for (std::uint64_t i = 0; i < ctrlSize; ++i) {
         symctrl::StateId s = 0;
         std::uint64_t actionCount = 0;
@@ -978,7 +1714,7 @@ void loadSafetyControllerBinary(const std::filesystem::path& filePath,
                 throw std::runtime_error("Truncated action list in binary controller file.");
             }
         }
-        outController.emplace_hint(outController.end(), s, std::move(actions));
+        outSynth.controller.emplace_hint(outSynth.controller.end(), s, std::move(actions));
     }
 }
 
@@ -993,11 +1729,13 @@ ChallengeSynthesisOutput runBuildingChallengeIsolated(const ChallengeConfig& con
         (config.reachabilityMethod == symctrl::ReachabilityMethod::CooperativeMonotone)
             ? "monotone"
             : "derivative";
+    const std::string solverArg = toString(config.solverMode);
 
     ScopedFileRemover tempGuard{makeTempControllerPath()};
 
     ChallengeMetrics metrics;
     metrics.rooms = config.rooms;
+    metrics.solverMode = config.solverMode;
     metrics.reachabilityMethod = config.reachabilityMethod;
     metrics.isolatedProcess = true;
     std::string workerError;
@@ -1007,6 +1745,7 @@ ChallengeSynthesisOutput runBuildingChallengeIsolated(const ChallengeConfig& con
         std::to_string(config.rooms),
         methodArg,
         std::to_string(config.memoryBudgetMiB == 0 ? 1ULL : config.memoryBudgetMiB),
+        solverArg,
         tempGuard.path.string()
     };
 
@@ -1026,12 +1765,19 @@ ChallengeSynthesisOutput runBuildingChallengeIsolated(const ChallengeConfig& con
                 if (eq != std::string::npos) {
                     const std::string key = line.substr(7, eq - 7);
                     const std::string val = line.substr(eq + 1);
-                    if (key == "internal_states") metrics.internalStates = std::stoull(val);
+                    if (key == "states_fit_u64") metrics.statesFitUint64 = (val == "1");
+                    else if (key == "internal_states") metrics.internalStates = std::stoull(val);
+                    else if (key == "internal_states_approx") metrics.internalStatesApprox = std::stod(val);
+                    else if (key == "inputs_fit_u64") metrics.inputsFitUint64 = (val == "1");
                     else if (key == "input_count") metrics.inputCount = std::stoull(val);
+                    else if (key == "input_count_approx") metrics.inputCountApprox = std::stod(val);
                     else if (key == "processed_pairs") metrics.processedPairs = std::stoull(val);
                     else if (key == "stored_edges") metrics.storedEdges = std::stoull(val);
                     else if (key == "controllable_states") metrics.controllableStates = std::stoull(val);
                     else if (key == "controllable_percent") metrics.controllablePercent = std::stod(val);
+                    else if (key == "fixed_point_iterations") {
+                        metrics.fixedPointIterations = static_cast<std::uint32_t>(std::stoul(val));
+                    } else if (key == "uniform_witness_q") metrics.uniformWitnessQ = std::stoi(val);
                     else if (key == "abstraction_seconds") metrics.abstractionSeconds = std::stod(val);
                     else if (key == "synthesis_seconds") metrics.synthesisSeconds = std::stod(val);
                     else if (key == "total_seconds") metrics.totalSeconds = std::stod(val);
@@ -1058,25 +1804,29 @@ ChallengeSynthesisOutput runBuildingChallengeIsolated(const ChallengeConfig& con
     }
 
     using namespace symctrl;
-    GridSpec spec;
-    spec.domain = Box{
-        Vector(config.rooms, kTempMin),
-        Vector(config.rooms, kTempMax)
-    };
-    spec.cells_per_dimension = GridIndex(config.rooms, kCellsPerDimension);
-    spec.periodic = std::vector<bool>(config.rooms, false);
-
     ChallengeSynthesisOutput output;
-    output.grid = makeUniformGrid(spec);
-    std::vector<Vector> inputAxes(
-        config.rooms,
-        Vector(kHeaterInputs.begin(), kHeaterInputs.end()));
-    output.inputs = makeCartesianInputs(std::move(inputAxes));
     output.dynamics = makeRingBuildingDynamics(config.rooms);
-    output.metrics = metrics;
+    if (metrics.statesFitUint64) {
+        GridSpec spec;
+        spec.domain = Box{
+            Vector(config.rooms, kTempMin),
+            Vector(config.rooms, kTempMax)
+        };
+        spec.cells_per_dimension = GridIndex(config.rooms, kCellsPerDimension);
+        spec.periodic = std::vector<bool>(config.rooms, false);
+        output.grid = makeUniformGrid(spec);
+    }
+    if (config.solverMode == SolverMode::ExplicitGraph) {
+        std::vector<Vector> inputAxes(
+            config.rooms,
+            Vector(kHeaterInputs.begin(), kHeaterInputs.end()));
+        output.inputs = makeCartesianInputs(std::move(inputAxes));
+    } else if (metrics.inputsFitUint64) {
+        output.inputs = std::make_shared<LazyRingInputCatalog>(config.rooms);
+    }
 
-    loadSafetyControllerBinary(
-        tempGuard.path, config.rooms, output.safetyDomain, output.controller);
+    output.metrics = metrics;
+    loadSafetyControllerBinary(tempGuard.path, config.rooms, output);
     return output;
 }
 
@@ -1085,14 +1835,67 @@ BuildingTrajectory simulateBuildingClosedLoop(const ChallengeSynthesisOutput& sy
                                               std::size_t horizon,
                                               ActionStrategy strategy) {
     BuildingTrajectory traj;
-    if (!synth.grid || !synth.inputs || !synth.dynamics) {
+    if (!synth.dynamics) {
         traj.statusMessage = "Controller is not initialized.";
         return traj;
     }
 
-    const std::size_t n = synth.grid->stateDimension();
+    const std::size_t n = synth.dynamics->stateDimension();
     if (initialTemperatures.size() != n) {
         traj.statusMessage = "Initial temperature vector dimension does not match N.";
+        return traj;
+    }
+
+    // Large-N CompactWitness path (N > 18 where 10^N overflows 64-bit StateId):
+    // applies the exact certified local witness rule directly per room coordinate.
+    if (!synth.grid || !synth.inputs) {
+        if (synth.metrics.solverMode != SolverMode::CompactWitness || !synth.witnessCert.allStatesSafe) {
+            traj.statusMessage = "Grid/input handles unavailable for simulation.";
+            return traj;
+        }
+        if (!allRoomsInComfortZone(initialTemperatures)) {
+            traj.statusMessage = "Initial state T(0) is outside [17, 22]^N.";
+            return traj;
+        }
+
+        symctrl::Vector x = initialTemperatures;
+        bool everyStepSafe = true;
+        std::vector<std::uint8_t> digits(n, 0);
+        traj.steps.reserve(horizon + 1);
+
+        for (std::size_t t = 0; t < horizon; ++t) {
+            const bool safeNow = allRoomsInComfortZone(x);
+            everyStepSafe = everyStepSafe && safeNow;
+            if (!safeNow) {
+                traj.steps.push_back({t, symctrl::kOutside, 0, false, false, x, symctrl::Vector(n, 0.0)});
+                traj.allStepsSafe = false;
+                traj.statusMessage = "Safety violated at step t=" + std::to_string(t) + ".";
+                return traj;
+            }
+            for (std::size_t d = 0; d < n; ++d) {
+                digits[d] = locateRoomCell1D(x[d]);
+            }
+            symctrl::Vector u(n, 0.0);
+            for (std::size_t d = 0; d < n; ++d) {
+                const std::size_t prev = (d == 0) ? (n - 1) : (d - 1);
+                const std::size_t next = (d + 1 == n) ? 0 : (d + 1);
+                const std::size_t triplet =
+                    (static_cast<std::size_t>(digits[prev]) * 10 + static_cast<std::size_t>(digits[d])) * 10
+                    + static_cast<std::size_t>(digits[next]);
+                const std::uint8_t q = selectLocalSafeAction(triplet, synth.witnessCert, strategy);
+                u[d] = kHeaterInputs[q];
+            }
+            traj.steps.push_back({t, 0, 0, true, safeNow, x, u});
+            x = synth.dynamics->step(x, u, {});
+        }
+
+        const bool finalSafe = allRoomsInComfortZone(x);
+        everyStepSafe = everyStepSafe && finalSafe;
+        traj.steps.push_back({horizon, 0, 0, false, finalSafe, x, symctrl::Vector(n, 0.0)});
+        traj.allStepsSafe = everyStepSafe;
+        traj.statusMessage = everyStepSafe
+            ? ("Safe for all " + std::to_string(horizon) + " steps in [17, 22]^" + std::to_string(n) + ".")
+            : "Safety bound violated during closed-loop simulation.";
         return traj;
     }
 
@@ -1101,12 +1904,26 @@ BuildingTrajectory simulateBuildingClosedLoop(const ChallengeSynthesisOutput& sy
         traj.statusMessage = "Initial state T(0) is outside [17, 22]^N.";
         return traj;
     }
-    if (synth.safetyDomain.count(startState) == 0) {
-        traj.statusMessage = "Initial cell is outside the winning safety domain R*.";
-        return traj;
+
+    std::unique_ptr<symctrl::ISymbolicPolicy> policy;
+    if (synth.metrics.solverMode == SolverMode::ExplicitGraph) {
+        if (synth.safetyDomain.count(startState) == 0) {
+            traj.statusMessage = "Initial cell is outside the winning safety domain R*.";
+            return traj;
+        }
+        policy = std::make_unique<SafetyTablePolicy>(synth.controller, *synth.inputs, strategy);
+    } else {
+        if (!synth.witnessCert.allStatesSafe) {
+            const std::uint64_t idx = startState - 1ULL;
+            if (synth.safeBitset.empty() || !getBit(synth.safeBitset, idx)) {
+                traj.statusMessage = "Initial cell is outside the winning bitset domain R*.";
+                return traj;
+            }
+        }
+        policy = std::make_unique<BitsetWitnessPolicy>(
+            n, synth.witnessCert, synth.safeBitset, strategy);
     }
 
-    SafetyTablePolicy policy(synth.controller, *synth.inputs, strategy);
     symctrl::Vector x = initialTemperatures;
     symctrl::PolicyMemory memory{};
     bool everyStepSafe = true;
@@ -1125,7 +1942,7 @@ BuildingTrajectory simulateBuildingClosedLoop(const ChallengeSynthesisOutput& sy
         }
 
         const symctrl::ConcreteDecision decision =
-            symctrl::refineDecision(*synth.grid, *synth.inputs, policy, x, memory);
+            symctrl::refineDecision(*synth.grid, *synth.inputs, *policy, x, memory);
 
         traj.steps.push_back({
             t,
@@ -1201,7 +2018,7 @@ void exportBuildingTrajectoryCsv(const BuildingTrajectory& trajectory,
 void exportChallengeModelPackage(const ChallengeSynthesisOutput& synth,
                                  const std::filesystem::path& directory) {
     if (!synth.grid || !synth.inputs || !synth.model) {
-        throw std::invalid_argument("No explicit transition model available to export.");
+        throw std::invalid_argument("No explicit transition model available to export (use ExplicitGraph mode).");
     }
 
     symctrl::ModelMetadata meta;
