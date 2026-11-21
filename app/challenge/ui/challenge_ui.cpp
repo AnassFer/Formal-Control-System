@@ -134,8 +134,9 @@ void renderSynthesisPanel(ChallengeUiState& state) {
         ImGui::Text("Stored edges        : %llu",
                     static_cast<unsigned long long>(m.storedEdges));
         if (m.memoryMeasured) {
-            ImGui::Text("Peak RSS / Current  : %.2f MiB / %.2f MiB",
-                        m.peakMemoryMiB, m.currentMemoryMiB);
+            ImGui::Text("Peak RSS / Current  : %.2f MiB / %.2f MiB (%s)",
+                        m.peakMemoryMiB, m.currentMemoryMiB,
+                        m.isolatedProcess ? "isolated process" : "in-process");
         } else {
             ImGui::Text("Peak RSS            : unavailable");
         }

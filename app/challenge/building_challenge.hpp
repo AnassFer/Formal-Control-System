@@ -77,7 +77,8 @@ struct ChallengeMetrics {
     double peakMemoryMiB = 0.0;
     double currentMemoryMiB = 0.0;
     bool memoryMeasured = false;
-    symctrl::NumericGuarantee numericGuarantee = symctrl::NumericGuarantee::UncertifiedFloat;
+    bool isolatedProcess = false;
+    symctrl::NumericGuarantee numericGuarantee = symctrl::NumericGuarantee::ValidatedEnclosure;
     symctrl::ReachabilityMethod reachabilityMethod = symctrl::ReachabilityMethod::CooperativeMonotone;
 };
 
@@ -130,8 +131,24 @@ ScaleEstimate estimateChallengeScale(std::size_t rooms);
 
 MemorySnapshot queryProcessMemory();
 
+// Runs the exact-integer certified circular-building abstraction and safety synthesis
+// inside the current process.
 ChallengeSynthesisOutput runBuildingChallenge(const ChallengeConfig& config,
                                               const ProgressCallback& onProgress = {});
+
+// Runs synthesis in a fresh isolated `challenge_cli` subprocess so Peak RSS is measured
+// independently per run without GUI overhead or high-water carry-over from prior runs.
+// Falls back to in-process execution if the sibling CLI binary cannot be located.
+ChallengeSynthesisOutput runBuildingChallengeIsolated(const ChallengeConfig& config,
+                                                      const ProgressCallback& onProgress = {});
+
+void saveSafetyControllerBinary(const ChallengeSynthesisOutput& synth,
+                                const std::filesystem::path& filePath);
+
+void loadSafetyControllerBinary(const std::filesystem::path& filePath,
+                                std::size_t expectedRooms,
+                                symctrl::part2::StateSet& outSafetyDomain,
+                                symctrl::part2::SafetyController& outController);
 
 BuildingTrajectory simulateBuildingClosedLoop(const ChallengeSynthesisOutput& synth,
                                               const symctrl::Vector& initialTemperatures,

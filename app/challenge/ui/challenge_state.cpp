@@ -81,7 +81,7 @@ void ChallengeUiState::startSynthesis() {
 
     worker_ = std::thread([this, cfg]() {
         try {
-            ChallengeSynthesisOutput output = runBuildingChallenge(
+            ChallengeSynthesisOutput output = runBuildingChallengeIsolated(
                 cfg, [this](int step, int total, const std::string& msg) {
                     progressStep_.store(step);
                     progressTotal_.store(total);

@@ -53,6 +53,7 @@ if(SYMCTRL_BUILD_UI)
     elseif(APPLE)
         target_compile_definitions(challenge_ui PRIVATE GLFW_INCLUDE_GLCOREARB GL_SILENCE_DEPRECATION)
     endif()
+    add_dependencies(challenge_ui challenge_cli)
 
     list(APPEND CHALLENGE_PACKAGE_TARGETS challenge_ui)
 endif()
