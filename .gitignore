@@ -37,6 +37,7 @@ imgui.ini
 /exports/
 /fig6_traj_*.csv
 /simulation_dashboard.csv
+/challenge_n*_trajectory.csv
 
 # Local IDE settings and generated Xcode projects.
 /.vscode/

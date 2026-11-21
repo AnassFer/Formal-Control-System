@@ -19,7 +19,8 @@ Navigation: [implemented features](#what-is-implemented) · [build and run](#bui
 | Finite-automaton tasks, paper Part 2 | Deterministic automaton validation, product graph, accepting target, winning initial states, and a finite-memory policy. |
 | Physical examples | Thermostat and circular-building dynamics, including their monotonicity checks and absolute derivative bounds. |
 | Command-line application | Thermostat abstraction, a supplied-policy simulation, three-room building abstraction, and thermostat export. |
-| Mobile robot and dashboard | Unicycle dynamics, periodic heading, finite-automaton missions, optimized synthesis, trajectory simulation, and a GLFW/Dear ImGui/ImPlot interface. |
+| Mobile robot package (`app/robot/`) | Standalone package with unicycle dynamics, periodic heading, finite-automaton missions, optimized synthesis, trajectory simulation, CLI (`robot_cli`), and interactive GLFW/Dear ImGui/ImPlot dashboard (`robot_dashboard`). |
+| Circular-building challenge package (`app/challenge/`) | Standalone package for the $N$-room circular-building safety challenge ($N \ge 3$ user input) built on `symctrl::symctrl`, reporting $T_{\text{abs}}$, $T_{\text{ctrl}}$, peak RSS memory, and controllable-state percentage via CLI (`challenge_cli`) and interactive GUI (`challenge_ui`). |
 
 All these sources are compiled by the default build. Synthesis is a C++ library API; the CLI commands demonstrate abstraction, refinement, and export. The safety and reachability controller builders return maps of allowed inputs. `AutomatonPolicy` implements the executable `ISymbolicPolicy` interface for automaton tasks.
 
@@ -29,15 +30,23 @@ Numerical backends currently report `UncertifiedFloat`. Their formulas depend on
 
 ## Build and run
 
-Requirements on all platforms: a C/C++ compiler with C++17 support, **CMake 3.21 or newer**, **Git** on `PATH`, a build tool, and graphics drivers supporting **OpenGL 3.0 or newer** on Windows/Ubuntu or **OpenGL 3.2** on macOS. Run the dashboard in a graphical desktop session.
+Requirements on all platforms: a C/C++ compiler with C++17 support, **CMake 3.21 or newer**, **Git** on `PATH`, a build tool, and graphics drivers supporting **OpenGL 3.0 or newer** on Windows/Linux or **OpenGL 3.2** on macOS. Run the graphical UIs (`robot_dashboard`, `challenge_ui`) in a graphical desktop session.
 
 During the first CMake configuration, Git downloads **GLFW 3.4**, **Dear ImGui v1.90.9**, and **ImPlot v0.16** automatically. Internet access is required for that step. Do not install these libraries separately; no Python, pip, or Node.js packages are needed. CMake also detects the system thread library automatically.
 
-Run all build commands from the project root, the folder containing `CMakeLists.txt`. Use separate build directories for Windows, Ubuntu, and macOS.
+You can build **each application package standalone** or build **everything from the project root**:
 
-### Ubuntu: install dependencies
+- **Robot package alone**: configure `-S app/robot` (targets `robot_dashboard`, `robot_cli`, `robot_package`) or root with `-DSYMCTRL_BUILD_ROBOT=ON -DSYMCTRL_BUILD_CHALLENGE=OFF`.
+- **Challenge package alone**: configure `-S app/challenge` (targets `challenge_ui`, `challenge_cli`, `challenge_package`) or root with `-DSYMCTRL_BUILD_ROBOT=OFF -DSYMCTRL_BUILD_CHALLENGE=ON`.
+- **All packages together**: configure `-S .` from the project root (builds `symctrl_cli`, `app/robot/*`, and `app/challenge/*`). Pass `-DSYMCTRL_BUILD_UI=OFF` if you only want headless CLI binaries without OpenGL/GLFW.
 
-On Ubuntu 22.04 or newer, install the compiler, Make, CMake, Git, OpenGL development files, and the X11/Wayland development dependencies:
+Use separate build directories for Windows, Linux, and macOS.
+
+---
+
+### Linux (Ubuntu 22.04+): install dependencies, build, and execute
+
+#### 1. Install dependencies
 
 ```bash
 sudo apt update
@@ -48,56 +57,134 @@ cmake --version
 
 The X11 and Wayland packages follow the [GLFW build requirements](https://www.glfw.org/docs/3.4/compile.html). Both backends are enabled by default.
 
-### Ubuntu: build and run the robot dashboard
+#### 2. Build and execute the Circular-Building Challenge package alone
 
 ```bash
-cmake -S . -B build-ubuntu -DCMAKE_BUILD_TYPE=Release
-cmake --build build-ubuntu --target robot_dashboard --parallel 2
-./build-ubuntu/robot_dashboard
+cmake -S app/challenge -B build-linux-challenge -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux-challenge --parallel
+./build-linux-challenge/challenge_ui
+# Headless CLI: challenge_cli [N] [monotone|derivative] [ram_budget_mib]
+./build-linux-challenge/challenge_cli 4
 ```
 
-If startup aborts with `Settings schema 'org.gnome.settings-daemon.plugins.xsettings' does not contain a key named 'antialiasing'`, launch through X11:
+#### 3. Build and execute the Mobile-Robot package alone
 
 ```bash
-XDG_SESSION_TYPE=x11 ./build-ubuntu/robot_dashboard
+cmake -S app/robot -B build-linux-robot -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux-robot --parallel
+./build-linux-robot/robot_dashboard
+# Headless CLI:
+./build-linux-robot/robot_cli
+```
+
+#### 4. Build and execute all targets from the project root
+
+```bash
+cmake -S . -B build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build build-linux --parallel
+./build-linux/app/challenge/challenge_ui
+./build-linux/app/challenge/challenge_cli 3
+./build-linux/app/robot/robot_dashboard
+./build-linux/app/robot/robot_cli
+./build-linux/symctrl_cli --help
+```
+
+If GUI startup on Ubuntu aborts with `Settings schema 'org.gnome.settings-daemon.plugins.xsettings' does not contain a key named 'antialiasing'`, launch through X11:
+
+```bash
+XDG_SESSION_TYPE=x11 ./build-linux-robot/robot_dashboard
+XDG_SESSION_TYPE=x11 ./build-linux-challenge/challenge_ui
 ```
 
 This selects GLFW's X11 backend and requires an X11/XWayland display. If the error persists in a VS Code Snap terminal, open Ubuntu Terminal with **Ctrl+Alt+T**, navigate to the project root, and run the same command there.
 
-### Windows: install dependencies
+---
 
-Install these before building:
+### Windows: install dependencies, build, and execute
 
+#### 1. Install dependencies (choose either MSVC or MSYS2)
+
+**Option A — Visual Studio 2022 (MSVC):**
 - [Git for Windows](https://git-scm.com/downloads/win), with Git available from the command line.
 - [CMake 3.21 or newer](https://cmake.org/download/), selecting **Add CMake to the system PATH** during installation.
-- **Visual Studio 2022** or **Build Tools for Visual Studio 2022**, with the **Desktop development with C++** workload. Include the **MSVC v143 x64/x86 build tools** and a **Windows 10 or Windows 11 SDK**. See [Microsoft's C++ installation instructions](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170).
-- Your graphics vendor's Windows driver with OpenGL 3.0 support. The Windows SDK supplies the OpenGL development files; no separate GLFW, ImGui, ImPlot, or pthread package is required.
+- **Visual Studio 2022** or **Build Tools for Visual Studio 2022**, with the **Desktop development with C++** workload (MSVC v143 + Windows 10/11 SDK). See [Microsoft's C++ installation instructions](https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170).
+- Graphics driver supporting OpenGL 3.0+.
 
-Restart the terminal after installation. Visual Studio Code alone does not supply a compiler or Windows SDK.
-
-### Windows: build and run the robot dashboard
-
-Open **PowerShell** in the project root. These commands use the [Visual Studio 2022 generator](https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2017%202022.html):
-
+**Option B — MSYS2 UCRT64 + Ninja (lightweight alternative):**
+Install [MSYS2](https://www.msys2.org/), then install GCC, CMake, and Ninja:
 ```powershell
-git --version
-cmake --version
-cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
-cmake --build build-windows --config Release --target robot_dashboard --parallel 2
-.\build-windows\Release\robot_dashboard.exe
+C:\msys64\usr\bin\pacman.exe -Syu --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
 ```
 
-For this Windows generator, `--config Release` selects the build configuration, and the executable is inside the `Release` subdirectory. On Ubuntu, `-DCMAKE_BUILD_TYPE=Release` selects it during configuration. After source changes, rerun the build command before launching again.
+#### 2. Build and execute with Visual Studio 2022 (PowerShell)
 
-### macOS: install dependencies
+**Challenge package alone:**
+```powershell
+cmake -S app/challenge -B build-win-challenge -G "Visual Studio 17 2022" -A x64
+cmake --build build-win-challenge --config Release --parallel
+.\build-win-challenge\Release\challenge_ui.exe
+.\build-win-challenge\Release\challenge_cli.exe 4
+```
 
-Install Apple's Command Line Tools for Xcode, which provide Apple Clang, Make, Git, and the macOS SDK:
+**Robot package alone:**
+```powershell
+cmake -S app/robot -B build-win-robot -G "Visual Studio 17 2022" -A x64
+cmake --build build-win-robot --config Release --parallel
+.\build-win-robot\Release\robot_dashboard.exe
+.\build-win-robot\Release\robot_cli.exe
+```
+
+**All targets from the project root:**
+```powershell
+cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
+cmake --build build-windows --config Release --parallel
+.\build-windows\app\challenge\Release\challenge_ui.exe
+.\build-windows\app\challenge\Release\challenge_cli.exe 3
+.\build-windows\app\robot\Release\robot_dashboard.exe
+.\build-windows\app\robot\Release\robot_cli.exe
+.\build-windows\Release\symctrl_cli.exe --help
+```
+
+#### 3. Build and execute with MSYS2 UCRT64 + Ninja (PowerShell)
+
+```powershell
+$env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
+
+# Challenge package alone:
+cmake -S app/challenge -B build-win-challenge -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-win-challenge
+.\build-win-challenge\challenge_ui.exe
+.\build-win-challenge\challenge_cli.exe 4
+
+# Robot package alone:
+cmake -S app/robot -B build-win-robot -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-win-robot
+.\build-win-robot\robot_dashboard.exe
+.\build-win-robot\robot_cli.exe
+
+# Or all targets from the project root:
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+.\build\app\challenge\challenge_ui.exe
+.\build\app\robot\robot_dashboard.exe
+.\build\symctrl_cli.exe --help
+```
+
+*(Add `C:\msys64\ucrt64\bin` to your Windows User `PATH` once if you want to launch the MSYS2-built executables without setting `$env:PATH`.)*
+
+---
+
+### macOS: install dependencies, build, and execute
+
+#### 1. Install dependencies
+
+Install Apple's Command Line Tools for Xcode (Apple Clang, Make, Git, and the macOS SDK):
 
 ```bash
 xcode-select --install
 ```
 
-Wait for the installer to finish before continuing. If the tools are already installed, skip that step. Install [CMake with Homebrew](https://formulae.brew.sh/formula/cmake) if you have a [supported Homebrew installation](https://docs.brew.sh/Installation):
+Wait for the installer to finish before continuing. Install [CMake with Homebrew](https://formulae.brew.sh/formula/cmake):
 
 ```bash
 brew install cmake
@@ -105,7 +192,7 @@ cmake --version
 git --version
 ```
 
-Alternatively, install CMake from the [official macOS download](https://cmake.org/download/). If you place `CMake.app` in `/Applications`, make its command-line tools available in the current terminal with:
+Alternatively, install CMake from the [official macOS download](https://cmake.org/download/) and add it to `PATH`:
 
 ```bash
 export PATH="/Applications/CMake.app/Contents/bin:$PATH"
@@ -114,42 +201,52 @@ cmake --version
 
 The system SDK supplies OpenGL and the native frameworks GLFW needs. CMake downloads and builds GLFW, ImGui, and ImPlot automatically; no separate graphics library or XQuartz installation is needed.
 
-### macOS: build and run the robot dashboard
+#### 2. Build and execute the Circular-Building Challenge package alone
 
-Open Terminal in the project root on an Intel or Apple Silicon Mac:
+```bash
+cmake -S app/challenge -B build-macos-challenge -DCMAKE_BUILD_TYPE=Release
+cmake --build build-macos-challenge --parallel
+./build-macos-challenge/challenge_ui
+# Headless CLI:
+./build-macos-challenge/challenge_cli 4
+```
+
+#### 3. Build and execute the Mobile-Robot package alone
+
+```bash
+cmake -S app/robot -B build-macos-robot -DCMAKE_BUILD_TYPE=Release
+cmake --build build-macos-robot --parallel
+./build-macos-robot/robot_dashboard
+# Headless CLI:
+./build-macos-robot/robot_cli
+```
+
+#### 4. Build and execute all targets from the project root
 
 ```bash
 cmake -S . -B build-macos -DCMAKE_BUILD_TYPE=Release
-cmake --build build-macos --target robot_dashboard --parallel 2
-./build-macos/robot_dashboard
+cmake --build build-macos --parallel
+./build-macos/app/challenge/challenge_ui
+./build-macos/app/challenge/challenge_cli 3
+./build-macos/app/robot/robot_dashboard
+./build-macos/app/robot/robot_cli
+./build-macos/symctrl_cli thermostat
 ```
 
-Use a native terminal and toolchain for your Mac's architecture; CMake selects the native architecture by default. Start with a fresh build directory when switching operating systems or architectures.
+Use a native terminal and toolchain for your Mac's architecture (Intel or Apple Silicon). Both UI apps request an OpenGL 3.2 core, forward-compatible context with GLSL 150 on macOS and silence macOS OpenGL deprecation warnings.
 
-The dashboard selects an OpenGL 3.2 core, forward-compatible context with GLSL 150 on macOS, following the [Dear ImGui GLFW/OpenGL example](https://github.com/ocornut/imgui/blob/v1.90.9/examples/example_glfw_opengl3/main.cpp). macOS OpenGL deprecation warnings are silenced for the dashboard; the renderer still uses the system OpenGL framework.
+---
 
-### Command-line examples
+### Command-line examples (`symctrl_cli` and `challenge_cli`)
 
-On Ubuntu, also build and run the robot CLI or the original model examples:
-
-```sh
-cmake --build build-ubuntu --target robot_cli symctrl_cli --parallel 2
-./build-ubuntu/robot_cli
-./build-ubuntu/symctrl_cli --help
-./build-ubuntu/symctrl_cli thermostat
-./build-ubuntu/symctrl_cli thermostat-policy
-./build-ubuntu/symctrl_cli building-n3
-./build-ubuntu/symctrl_cli export-thermostat exports/thermostat
-```
-
-On Windows, build those targets with `cmake --build build-windows --config Release --target robot_cli symctrl_cli --parallel 2`, then use `.\build-windows\Release\robot_cli.exe` or `.\build-windows\Release\symctrl_cli.exe` with the same model arguments.
-
-On macOS:
+Core model commands via `symctrl_cli`:
 
 ```bash
-cmake --build build-macos --target robot_cli symctrl_cli --parallel 2
-./build-macos/robot_cli
-./build-macos/symctrl_cli thermostat
+./build-linux/symctrl_cli --help
+./build-linux/symctrl_cli thermostat
+./build-linux/symctrl_cli thermostat-policy
+./build-linux/symctrl_cli building-n3
+./build-linux/symctrl_cli export-thermostat exports/thermostat
 ```
 
 | Command | What it does |
@@ -160,30 +257,45 @@ cmake --build build-macos --target robot_cli symctrl_cli --parallel 2
 | `building-n3` | Builds the three-room graph over `[17,22]^3`, using ten cells per dimension and input values `{0,0.3,0.6}` per room. There are 1,000 internal states and 27 actions. |
 | `export-thermostat DIRECTORY` | Builds the thermostat model and writes its metadata, cells, inputs, and transitions to the directory. |
 
-Exit codes are `0` for success, `1` for invalid usage or a reported exception, and `2` if a `NotImplemented` exception reaches the CLI. Build products and exports are generated files and are ignored by Git. There are no test sources, CTest targets, or readiness scripts in this cleaned project.
+Circular-building challenge CLI (`challenge_cli [N] [monotone|derivative] [ram_budget_mib]`):
+
+```bash
+./build-linux-challenge/challenge_cli 3              # N=3, CooperativeMonotone, 16384 MiB budget
+./build-linux-challenge/challenge_cli 4 monotone     # N=4 with monotone reachability
+./build-linux-challenge/challenge_cli 4 derivative   # N=4 with bounded-derivative reachability
+./build-linux-challenge/challenge_cli 5 monotone 24576
+```
+
+Exit codes are `0` for success, `1` for invalid usage or a reported exception, and `2` if a `NotImplemented` exception reaches `symctrl_cli`. Build products and exports are generated files and are ignored by Git.
 
 ### Generated files and local settings
 
-`.gitignore` excludes platform build directories (`build-ubuntu`, `build-windows`, `build-macos`), CMake output, compiled binaries, generated Xcode projects, local IDE settings, macOS/Windows metadata, `imgui.ini`, and the default simulation CSV exports. Your editor configuration and dashboard layout remain local; running the dashboard does not require a tracked `imgui.ini` file. Keep shared CMake presets in `CMakePresets.json`; personal overrides in `CMakeUserPresets.json` are ignored.
+`.gitignore` excludes platform build directories (`build*`), CMake output, compiled binaries, generated Xcode projects, local IDE settings, macOS/Windows metadata, `imgui.ini`, and default simulation CSV exports (`fig6_traj_*.csv`, `simulation_dashboard.csv`, `challenge_n*_trajectory.csv`). Your editor configuration and UI layout remain local; running the UIs does not require a tracked `imgui.ini` file. Keep shared CMake presets in `CMakePresets.json`; personal overrides in `CMakeUserPresets.json` are ignored.
 
 ## Where the code lives
 
 ```text
 readme.md                          This guide
-CMakeLists.txt                     Builds libraries, CLIs, and the robot dashboard
-app/symbolic_control.cpp           CLI commands and supplied example policy
-app/robot_cli.cpp                  Robot synthesis and simulation CLI
-app/robot_simulation.cpp           Optimized robot synthesis and closed-loop simulation
-app/unicycle_dynamics.cpp          Mobile-robot dynamics
-app/mission_compiler.cpp           Region labels and mission automata
-app/dashboard/                    Interactive robot dashboard
+CMakeLists.txt                     Core library, CLI, and package switches (robot / challenge)
+cmake/symctrl_ui_deps.cmake        Shared GLFW / Dear ImGui / ImPlot FetchContent module
+app/symbolic_control.cpp           Core CLI commands and supplied example policy
+app/robot/                         Standalone mobile-robot package (CMakeLists.txt)
+  unicycle_dynamics.{hpp,cpp}      Mobile-robot dynamics and Jacobian bounds
+  mission_compiler.{hpp,cpp}       Region labels and mission automata
+  robot_simulation.{hpp,cpp}       Optimized robot synthesis and closed-loop simulation
+  robot_cli.cpp                    Robot synthesis and simulation CLI
+  dashboard/                       Interactive robot dashboard (robot_dashboard)
+app/challenge/                     Standalone circular-building challenge package (CMakeLists.txt)
+  building_challenge.{hpp,cpp}     General N>=3 safety synthesis, metrics, and simulation
+  challenge_cli.cpp                Circular-building challenge CLI (challenge_cli)
+  ui/                              Interactive circular-building UI (challenge_ui)
 include/symctrl/                   Public types, interfaces, and factories
 include/symctrl/synthesis/         Public synthesis and automaton APIs
-src/common/                       Value, successor-set, and bundle validation
-src/discretization/               Uniform grid, inputs, runtime refinement
-src/abstraction/                  Enclosures, transition graph, model export
-src/models/                       Thermostat and circular-building dynamics
-src/synthesis/                    Safety, reachability, automata, product model
+src/common/                        Value, successor-set, and bundle validation
+src/discretization/                Uniform grid, inputs, runtime refinement
+src/abstraction/                   Enclosures, transition graph, model export
+src/models/                        Thermostat and circular-building dynamics
+src/synthesis/                     Safety, reachability, automata, product model
 ```
 
 Each source directory has a short `CMakeLists.txt` that lists its compilation units. Internal helper headers live beside their implementations. Public headers require only other public headers.
