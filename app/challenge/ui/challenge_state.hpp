@@ -30,13 +30,14 @@ public:
 
     // User-controlled inputs (unknown N >= 3)
     int roomsInput = 3;
+    int solverModeIndex = 0;   // 0 = BitsetWitness, 1 = CompactWitness (Temoin), 2 = ExplicitGraph
     int reachabilityIndex = 0; // 0 = CooperativeMonotone, 1 = BoundedDerivative
     int memoryBudgetMiB = 16384;
 
     // Simulation controls
     std::vector<double> initialTemperatures;
     int horizon = 40;
-    int strategyIndex = 0; // 0 = MinEnergy, 1 = FirstSafe, 2 = MaxHeating
+    int strategyIndex = 0; // 0 = Witness, 1 = MinEnergy, 2 = FirstSafe, 3 = MaxHeating
 
     // Results and benchmark log
     std::optional<ChallengeSynthesisOutput> synthesis;
@@ -45,6 +46,8 @@ public:
     std::string lastError;
     std::string lastStatus;
     bool configDirty = true;
+
+    SolverMode selectedSolverMode() const noexcept;
 
     void syncInitialTemperaturesToN();
     void applyUniformInitial(double temp);

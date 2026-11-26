@@ -16,6 +16,16 @@ ChallengeUiState::~ChallengeUiState() {
     }
 }
 
+SolverMode ChallengeUiState::selectedSolverMode() const noexcept {
+    if (solverModeIndex == 1) {
+        return SolverMode::CompactWitness;
+    }
+    if (solverModeIndex == 2) {
+        return SolverMode::ExplicitGraph;
+    }
+    return SolverMode::BitsetWitness;
+}
+
 void ChallengeUiState::syncInitialTemperaturesToN() {
     if (roomsInput < 3) {
         roomsInput = 3;
@@ -25,7 +35,6 @@ void ChallengeUiState::syncInitialTemperaturesToN() {
         const std::size_t oldSize = initialTemperatures.size();
         initialTemperatures.resize(targetSize, 19.5);
         for (std::size_t i = oldSize; i < targetSize; ++i) {
-            // Spread defaults mildly across [17.5, 21.5] so room curves are distinguishable.
             const double phase = static_cast<double>(i % 5) / 4.0;
             initialTemperatures[i] = 17.5 + 4.0 * phase;
         }
@@ -63,6 +72,7 @@ void ChallengeUiState::startSynthesis() {
 
     ChallengeConfig cfg;
     cfg.rooms = static_cast<std::size_t>(roomsInput);
+    cfg.solverMode = selectedSolverMode();
     cfg.reachabilityMethod = (reachabilityIndex == 0)
         ? symctrl::ReachabilityMethod::CooperativeMonotone
         : symctrl::ReachabilityMethod::BoundedDerivative;
@@ -73,7 +83,8 @@ void ChallengeUiState::startSynthesis() {
     progressTotal_.store(5);
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        progressMessage_ = "Starting synthesis for N=" + std::to_string(cfg.rooms) + "...";
+        progressMessage_ = "Starting " + std::string(toString(cfg.solverMode))
+            + " synthesis for N=" + std::to_string(cfg.rooms) + "...";
         hasPendingResult_ = false;
         pendingSynthesis_.reset();
         pendingError_.clear();
@@ -118,7 +129,8 @@ void ChallengeUiState::pollSynthesis() {
         history.push_back(synthesis->metrics);
         configDirty = false;
         lastError.clear();
-        lastStatus = "Controller ready for N=" + std::to_string(synthesis->metrics.rooms) + ".";
+        lastStatus = "Controller ready for N=" + std::to_string(synthesis->metrics.rooms)
+            + " (" + toString(synthesis->metrics.solverMode) + ").";
     }
     pendingSynthesis_.reset();
     hasPendingResult_ = false;
@@ -157,10 +169,12 @@ void ChallengeUiState::runSimulation() {
     }
 
     const auto steps = static_cast<std::size_t>(std::max(1, horizon));
-    ActionStrategy strategy = ActionStrategy::MinEnergy;
+    ActionStrategy strategy = ActionStrategy::Witness;
     if (strategyIndex == 1) {
-        strategy = ActionStrategy::FirstSafe;
+        strategy = ActionStrategy::MinEnergy;
     } else if (strategyIndex == 2) {
+        strategy = ActionStrategy::FirstSafe;
+    } else if (strategyIndex == 3) {
         strategy = ActionStrategy::MaxHeating;
     }
 

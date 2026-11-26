@@ -12,10 +12,11 @@
 namespace {
 
 void printUsage() {
-    std::cout << "Usage: challenge_cli [N] [monotone|derivative] [ram_budget_mib]\n"
+    std::cout << "Usage: challenge_cli [N] [monotone|derivative] [ram_budget_mib] [bitset|temoin|explicit]\n"
               << "  N              Number of circular-building rooms (exact integer >= 3, default: 3)\n"
               << "  method         Reachability method: monotone (default) or derivative\n"
-              << "  ram_budget_mib Explicit graph memory budget in MiB (exact integer >= 1, default: 16384)\n";
+              << "  ram_budget_mib Memory budget in MiB (exact integer >= 1, default: 16384)\n"
+              << "  solver         Solver mode: bitset (default), temoin (O(1) witness), or explicit\n";
 }
 
 std::uint64_t parseStrictUint64(const std::string& raw, const char* paramName) {
@@ -54,6 +55,20 @@ symctrl::ReachabilityMethod parseMethod(const std::string& raw) {
                                 + "' (expected 'monotone' or 'derivative').");
 }
 
+challenge_app::SolverMode parseSolverMode(const std::string& raw) {
+    if (raw == "bitset") {
+        return challenge_app::SolverMode::BitsetWitness;
+    }
+    if (raw == "temoin" || raw == "witness") {
+        return challenge_app::SolverMode::CompactWitness;
+    }
+    if (raw == "explicit") {
+        return challenge_app::SolverMode::ExplicitGraph;
+    }
+    throw std::invalid_argument("Unknown solver mode: '" + raw
+                                + "' (expected 'bitset', 'temoin', or 'explicit').");
+}
+
 std::size_t parseRooms(const std::string& raw) {
     const std::uint64_t val = parseStrictUint64(raw, "N");
     if (val < 3 || val > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
@@ -71,16 +86,18 @@ std::uint64_t parseBudgetMiB(const std::string& raw) {
 }
 
 int runIsolatedWorker(int argc, char** argv) {
-    // Internal protocol: challenge_cli --isolated-worker <N> <method> <budget_mib> <out_bin_path>
+    // Internal protocol:
+    //   challenge_cli --isolated-worker <N> <method> <budget_mib> <solver> <out_bin_path>
     try {
-        if (argc != 6) {
+        if (argc != 7) {
             throw std::invalid_argument("Invalid arguments for --isolated-worker.");
         }
         challenge_app::ChallengeConfig config;
         config.rooms = parseRooms(argv[2]);
         config.reachabilityMethod = parseMethod(argv[3]);
         config.memoryBudgetMiB = parseBudgetMiB(argv[4]);
-        const std::filesystem::path outPath(argv[5]);
+        config.solverMode = parseSolverMode(argv[5]);
+        const std::filesystem::path outPath(argv[6]);
 
         const auto output = challenge_app::runBuildingChallenge(
             config, [](int step, int total, const std::string& msg) {
@@ -92,12 +109,18 @@ int runIsolatedWorker(int argc, char** argv) {
         const auto& m = output.metrics;
         std::cout.imbue(std::locale::classic());
         std::cout << std::setprecision(12)
+                  << "METRIC:states_fit_u64=" << (m.statesFitUint64 ? 1 : 0) << '\n'
                   << "METRIC:internal_states=" << m.internalStates << '\n'
+                  << "METRIC:internal_states_approx=" << m.internalStatesApprox << '\n'
+                  << "METRIC:inputs_fit_u64=" << (m.inputsFitUint64 ? 1 : 0) << '\n'
                   << "METRIC:input_count=" << m.inputCount << '\n'
+                  << "METRIC:input_count_approx=" << m.inputCountApprox << '\n'
                   << "METRIC:processed_pairs=" << m.processedPairs << '\n'
                   << "METRIC:stored_edges=" << m.storedEdges << '\n'
                   << "METRIC:controllable_states=" << m.controllableStates << '\n'
                   << "METRIC:controllable_percent=" << m.controllablePercent << '\n'
+                  << "METRIC:fixed_point_iterations=" << m.fixedPointIterations << '\n'
+                  << "METRIC:uniform_witness_q=" << m.uniformWitnessQ << '\n'
                   << "METRIC:abstraction_seconds=" << m.abstractionSeconds << '\n'
                   << "METRIC:synthesis_seconds=" << m.synthesisSeconds << '\n'
                   << "METRIC:total_seconds=" << m.totalSeconds << '\n'
@@ -132,9 +155,9 @@ int main(int argc, char** argv) {
                 printUsage();
                 return 0;
             }
-            if (argc > 4) {
+            if (argc > 5) {
                 throw std::invalid_argument(
-                    "Too many arguments (expected at most 3: [N] [monotone|derivative] [ram_budget_mib]).");
+                    "Too many arguments (expected at most 4: [N] [monotone|derivative] [ram_budget_mib] [bitset|temoin|explicit]).");
             }
             config.rooms = parseRooms(arg1);
         }
@@ -147,6 +170,10 @@ int main(int argc, char** argv) {
             config.memoryBudgetMiB = parseBudgetMiB(argv[3]);
         }
 
+        if (argc >= 5) {
+            config.solverMode = parseSolverMode(argv[4]);
+        }
+
         const auto output = challenge_app::runBuildingChallenge(
             config, [](int step, int total, const std::string& msg) {
                 std::cout << '[' << step << '/' << total << "] " << msg << '\n';
@@ -156,14 +183,35 @@ int main(int argc, char** argv) {
         std::cout << std::fixed << std::setprecision(4)
                   << "\n=== Circular Building Safety Challenge Report ===\n"
                   << "N (rooms)            : " << m.rooms << '\n'
-                  << "Symbolic states 10^N : " << m.internalStates << '\n'
-                  << "Symbolic inputs 3^N  : " << m.inputCount << '\n'
-                  << "Stored edges         : " << m.storedEdges << '\n'
+                  << "Solver mode          : " << challenge_app::toString(m.solverMode) << '\n'
+                  << "Symbolic states 10^N : ";
+        if (m.statesFitUint64) {
+            std::cout << m.internalStates << '\n';
+        } else {
+            std::cout << std::scientific << std::setprecision(3) << m.internalStatesApprox << std::fixed << std::setprecision(4) << '\n';
+        }
+        std::cout << "Symbolic inputs 3^N  : ";
+        if (m.inputsFitUint64) {
+            std::cout << m.inputCount << '\n';
+        } else {
+            std::cout << std::scientific << std::setprecision(3) << m.inputCountApprox << std::fixed << std::setprecision(4) << '\n';
+        }
+        std::cout << "Stored edges         : " << m.storedEdges
+                  << (m.solverMode == challenge_app::SolverMode::ExplicitGraph ? "" : " (matrix-free)") << '\n'
+                  << "Fixed-point iters    : " << m.fixedPointIterations << '\n'
+                  << "Uniform witness u_i  : "
+                  << (m.uniformWitnessQ >= 0
+                          ? std::to_string(challenge_app::kHeaterInputs[static_cast<std::size_t>(m.uniformWitnessQ)])
+                          : "none")
+                  << '\n'
                   << "T_abs (s)            : " << m.abstractionSeconds << '\n'
                   << "T_ctrl (s)           : " << m.synthesisSeconds << '\n'
                   << "Total T_abs+T_ctrl   : " << m.totalSeconds << '\n'
-                  << "Controllable states  : " << m.controllableStates << " / " << m.internalStates
-                  << " (" << std::setprecision(2) << m.controllablePercent << "%)\n"
+                  << "Controllable states  : ";
+        if (m.statesFitUint64) {
+            std::cout << m.controllableStates << " / " << m.internalStates << " ";
+        }
+        std::cout << "(" << std::setprecision(2) << m.controllablePercent << "%)\n"
                   << "Peak memory RSS      : "
                   << (m.memoryMeasured ? (std::to_string(m.peakMemoryMiB) + " MiB") : "unavailable")
                   << '\n'
@@ -172,7 +220,7 @@ int main(int argc, char** argv) {
         // Quick closed-loop verification starting near the cold boundary (17.2 C)
         symctrl::Vector x0(config.rooms, 17.2);
         const auto sim = challenge_app::simulateBuildingClosedLoop(
-            output, x0, 30, challenge_app::ActionStrategy::MinEnergy);
+            output, x0, 30, challenge_app::ActionStrategy::Witness);
         std::cout << "Closed-loop test (30 steps from 17.2 C): " << sim.statusMessage << '\n';
         return sim.allStepsSafe ? 0 : 1;
     } catch (const std::exception& e) {

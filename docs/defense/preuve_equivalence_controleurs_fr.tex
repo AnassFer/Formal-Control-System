@@ -1,0 +1,368 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{hyperref}
+
+\definecolor{primary}{HTML}{1E3A8A}
+\definecolor{accent}{HTML}{0F766E}
+\definecolor{warn}{HTML}{B45309}
+\definecolor{softbg}{HTML}{F8FAFC}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  citecolor=accent,
+  urlcolor=primary,
+  pdftitle={Preuve d'équivalence entre le contrôleur de sûreté maximal et le contrôleur compact factorisé},
+  pdfauthor={Formal-Control-System — Challenge Bâtiment Circulaire}
+}
+
+% Environnements mathématiques en français
+\theoremstyle{definition}
+\newtheorem{definition}{Définition}
+\newtheorem{exemple}{Exemple}
+
+\theoremstyle{plain}
+\newtheorem{lemme}{Lemme}
+\newtheorem{theoreme}{Théorème}
+
+\newtcolorbox{encadre}[2][primary]{
+  colback=softbg,
+  colframe=#1,
+  coltitle=white,
+  fonttitle=\bfseries,
+  title=#2,
+  arc=3pt,
+  boxrule=0.8pt,
+  left=8pt, right=8pt, top=6pt, bottom=6pt
+}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\X}{\mathbb{X}}
+\newcommand{\Safe}{\mathbb{S}}
+\newcommand{\U}{\mathbb{U}}
+\newcommand{\Pre}{\operatorname{Pre}}
+\newcommand{\cl}{\operatorname{cl}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{\color{primary}Équivalence Mathématique entre le Contrôleur de Sûreté Maximal et le Contrôleur Compact Factorisé}\\[4pt]
+\large Preuve Formelle pour le Challenge de Régulation Thermique en Anneau ($N \ge 3$)}
+\author{Projet \emph{Formal-Control-System} --- Soutenance de Contrôle Symbolique}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Nous établissons rigoureusement que, pour le problème de régulation thermique d'un bâtiment circulaire à $N \ge 3$ pièces muni de la discrétisation imposée ($n_d = 10$, $n_u = 3$), le contrôleur compact factorisé $H_{\mathrm{compact}}$ stocké en mémoire constante $O(1)$ ($1\,000$ octets dans \code{localSafeMask[1000]}) est \textbf{mathématiquement identique} (égalité ensembliste exacte) au contrôleur de sûreté maximal multivalué $H^*$ synthétisé monolithiquement par l'Algorithme~1 et le Théorème~2 de Girard, Meyer et Saoud~\cite{girard2024} :
+\[
+  \forall N \ge 3,\quad R^* = Q_s = \{1, \dots, 10^N\}
+  \qquad\text{et}\qquad
+  \forall \xi \in Q_s,\quad H_{\mathrm{compact}}(\xi) = H^*(\xi).
+\]
+Nous précisons également le rôle de la symétrie cyclique dans la compression sans perte et donnons un exemple concret montrant pourquoi l'équivalence cesse de tenir lorsque le domaine de sûreté $R^*$ n'est plus un produit cartésien.
+\end{abstract}
+
+% ==============================================================================
+\section{Modèle thermique en anneau et abstraction symbolique}
+% ==============================================================================
+
+\subsection{Dynamique discrète et spécification de sûreté}
+
+Soit $N \ge 3$ le nombre de pièces disposées en anneau, avec convention cyclique sur les indices : $T_0 \coloneqq T_N$ et $T_{N+1} \coloneqq T_1$. Pour tout instant $t \in \N$ et toute pièce $i \in \{1, \dots, N\}$, la température $T_i(t) \in \R$ évolue selon :
+\begin{equation}
+  T_i(t+1) = f_i\bigl(T_{i-1}(t), T_i(t), T_{i+1}(t), u_i(t)\bigr)
+  = \bigl(1 - 2\alpha - \beta - \gamma u_i(t)\bigr)\, T_i(t)
+    + \alpha\bigl(T_{i-1}(t) + T_{i+1}(t)\bigr)
+    + \beta T_e + \gamma T_h u_i(t),
+  \label{eq:ring_dynamics}
+\end{equation}
+avec les paramètres imposés par l'énoncé du challenge (Saoud, \emph{Project -- Symbolic Control}, Slides~14--16) :
+\[
+  \alpha = 0{,}45,\quad \beta = 0{,}045,\quad \gamma = 0{,}09,\quad T_e = -1,\quad T_h = 50,
+\]
+l'espace d'état et la zone de sûreté $\X = \Safe = [17, 22]^N$, la discrétisation uniforme de $n_d = 10$ cellules par dimension (pas $\eta = 0{,}5\,^\circ\mathrm{C}$), et l'ensemble fini de commandes $\U_d = \U_1^N$ avec $\U_1 \coloneqq \{0\,;\, 0{,}3\,;\, 0{,}6\}$ ($n_u = 3$ par pièce).
+
+Pour chaque commande locale $u \in \U_1$, le coefficient diagonal vaut :
+\begin{equation}
+  d(u) \coloneqq 1 - 2\alpha - \beta - \gamma u
+  = 0{,}055 - 0{,}09\,u
+  \in \{0{,}055\,;\, 0{,}028\,;\, 0{,}001\} > 0.
+  \label{eq:diag_coeff}
+\end{equation}
+Comme $\partial f_i / \partial T_i = d(u_i) > 0$, $\partial f_i / \partial T_{i\pm 1} = \alpha = 0{,}45 > 0$ et $\partial f_i / \partial T_j = 0$ pour $j \notin \{i-1, i, i+1\}$, le système~\eqref{eq:ring_dynamics} est \textbf{strictement monotone coopératif} sur $\X \times \U_d$ au sens de~\cite[§1.1.3]{girard2024} et~\cite{angeli2003}. De plus, sur $[17, 22]^N$, $\partial f_i / \partial u_i = \gamma (T_h - T_i) \ge 0{,}09 \times 28 = 2{,}52 > 0$, donc le système est également monotone en la commande.
+
+\subsection{Discrétisation et intervalles surapproximants locaux}
+
+On partitionne $[17, 22]$ en $10$ sous-intervalles uniformes de largeur $\eta = 0{,}5$, indexés par $c_j \in \{0, \dots, 9\}$, d'adhérences
+\[
+  \cl(\X_{c_j}^{1\mathrm{D}}) = [\underline{x}_{c_j},\; \overline{x}_{c_j}]
+  = \bigl[17 + 0{,}5\,c_j,\; 17 + 0{,}5(c_j + 1)\bigr].
+\]
+L'ensemble des états symboliques internes est $Q_s = \{1, \dots, 10^N\}$, mis en bijection avec $\{0, \dots, 9\}^N$ par
+\[
+  \xi(c) = 1 + \sum_{d=0}^{N-1} c_{d+1}\,10^d \in Q_s,
+  \qquad c = (c_1, \dots, c_N) \in \{0, \dots, 9\}^N,
+\]
+et l'état $\xi = 0$ (noté $\mathrm{OUT}$) représente $\X_0 = \R^N \setminus \X$, formant l'espace total $\Xi = \{0\} \cup Q_s$. L'ensemble des commandes symboliques $\Sigma$ s'identifie à $\U_1^N = \{0\,;\, 0{,}3\,;\, 0{,}6\}^N$ via $\sigma = (u_1, \dots, u_N)$.
+
+Puisque la dynamique $f_i$ de la pièce $i$ ne dépend que du triplet de cellules voisines $\tau = (c_{\mathrm{prev}}, c_{\mathrm{cur}}, c_{\mathrm{next}}) \in \{0, \dots, 9\}^3$ et de sa propre commande $u \in \U_1$, l'analyse d'atteignabilité pour système monotone coopératif~\cite[§1.1.3, Fig.~3a]{girard2024} associe à chaque paire $(\tau, u)$ l'intervalle fermé non vide :
+\begin{equation}
+  I(\tau, u) \coloneqq
+  \Bigl[f_i\bigl(\underline{x}_{c_{\mathrm{prev}}}, \underline{x}_{c_{\mathrm{cur}}}, \underline{x}_{c_{\mathrm{next}}}, u\bigr),\;\;
+        f_i\bigl(\overline{x}_{c_{\mathrm{prev}}}, \overline{x}_{c_{\mathrm{cur}}}, \overline{x}_{c_{\mathrm{next}}}, u\bigr)\Bigr].
+  \label{eq:i_local}
+\end{equation}
+
+% ==============================================================================
+\section{Définition des contrôleurs comparés}
+% ==============================================================================
+
+Pour tout état symbolique interne $\xi = \xi(c) \in Q_s$ et toute commande $\sigma = (u_1, \dots, u_N) \in \Sigma$, l'ensemble surapproximant global est le pavé (intervalle multidimensionnel) :
+\begin{equation}
+  \mathbb{Y}_{\xi, \sigma} = \prod_{i=1}^{N} I\bigl(\tau_i(c), u_i\bigr) \subseteq \R^N,
+  \qquad\text{où}\quad \tau_i(c) \coloneqq (c_{i-1}, c_i, c_{i+1}),
+  \label{eq:global_box}
+\end{equation}
+et la fonction de transition symbolique~\cite[§1.1.2]{girard2024} est définie par :
+\begin{equation}
+  g(\xi, \sigma) = \bigl\{\xi^+ \in \Xi \;\big|\; \mathbb{Y}_{\xi, \sigma} \cap \cl(\X_{\xi^+}) \neq \emptyset\bigr\},
+  \qquad\text{avec } g(0, \sigma) = \Xi \text{ (Remarque~3 de~\cite{girard2024}).}
+  \label{eq:symbolic_trans}
+\end{equation}
+
+\begin{definition}[Contrôleur de sûreté maximal monolithique $H^*$ --- Mode~1 \code{ExplicitGraph}]
+\label{def:h_star}
+Conformément à~\cite[§2.1, Éq.~(8), Algorithme~1 et Théorème~2]{girard2024}, on définit l'opérateur de prédécesseur robuste $\Pre : 2^\Xi \to 2^\Xi$ par
+\[
+  \Pre(R) \coloneqq \bigl\{\xi \in \Xi \;\big|\; \exists \sigma \in \Sigma,\; \emptyset \neq g(\xi, \sigma) \subseteq R\bigr\}.
+\]
+L'Algorithme~1 construit la suite décroissante $R_0 = Q_s$, $R_{k+1} = Q_s \cap \Pre(R_k)$ jusqu'au point fixe $R^* \subseteq Q_s$. Le \textbf{contrôleur de sûreté maximal multivalué} $H^* : R^* \to 2^\Sigma$ est défini pour tout $\xi \in R^*$ par :
+\begin{equation}
+  H^*(\xi) \coloneqq \bigl\{\sigma \in \Sigma \;\big|\; \emptyset \neq g(\xi, \sigma) \subseteq R^*\bigr\}.
+  \label{eq:h_star}
+\end{equation}
+\end{definition}
+
+\begin{definition}[Contrôleur compact factorisé $H_{\mathrm{compact}}$ --- Mode~3 \code{CompactWitness}]
+\label{def:h_compact}
+Pour chaque triplet local $\tau \in \{0, \dots, 9\}^3$, on définit l'ensemble local de commandes sûres (encodé sur $3$ bits dans le tableau \code{localSafeMask[1000]} de $1\,000$ octets) :
+\begin{equation}
+  H_{\mathrm{loc}}(\tau) \coloneqq \bigl\{u \in \U_1 \;\big|\; I(\tau, u) \subset (17, 22)\bigr\}.
+  \label{eq:h_loc}
+\end{equation}
+Le \textbf{contrôleur compact factorisé} $H_{\mathrm{compact}} : Q_s \to 2^\Sigma$ est défini pour tout $\xi = \xi(c) \in Q_s$ par le produit cartésien :
+\begin{equation}
+  H_{\mathrm{compact}}(\xi) \coloneqq \prod_{i=1}^{N} H_{\mathrm{loc}}\bigl(\tau_i(c)\bigr)
+  = \bigl\{(u_1, \dots, u_N) \in \U_1^N \;\big|\; \forall i \in \{1, \dots, N\},\; u_i \in H_{\mathrm{loc}}(c_{i-1}, c_i, c_{i+1})\bigr\}.
+  \label{eq:h_compact}
+\end{equation}
+\end{definition}
+
+% ==============================================================================
+\section{Preuve formelle de l'équivalence exacte}
+% ==============================================================================
+
+\begin{lemme}[Factorisation cartésienne de l'inclusion dans $Q_s$]
+\label{lem:cartesian_factorization}
+Pour tout $N \ge 3$, tout état symbolique interne $\xi = \xi(c) \in Q_s$ et toute commande symbolique $\sigma = (u_1, \dots, u_N) \in \Sigma$, on a l'équivalence exacte :
+\begin{equation}
+  \bigl(\emptyset \neq g(\xi, \sigma) \subseteq Q_s\bigr)
+  \;\Longleftrightarrow\;
+  \forall i \in \{1, \dots, N\},\; u_i \in H_{\mathrm{loc}}\bigl(\tau_i(c)\bigr).
+  \label{eq:cart_equiv}
+\end{equation}
+\end{lemme}
+
+\begin{proof}
+Comme $\Xi = \{0\} \cup Q_s$ et $\cl(\X_0) = \cl(\R^N \setminus [17, 22]^N) = \R^N \setminus (17, 22)^N$, montrons d'abord que :
+\[
+  \bigl(\emptyset \neq g(\xi, \sigma) \subseteq Q_s\bigr)
+  \;\Longleftrightarrow\;
+  \mathbb{Y}_{\xi, \sigma} \subset (17, 22)^N.
+\]
+\begin{itemize}[leftmargin=1.5em]
+  \item[$(\Rightarrow)$] Si $g(\xi, \sigma) \subseteq Q_s$, alors $0 \notin g(\xi, \sigma)$, ce qui signifie par~\eqref{eq:symbolic_trans} que $\mathbb{Y}_{\xi, \sigma} \cap \cl(\X_0) = \emptyset$, d'où $\mathbb{Y}_{\xi, \sigma} \subseteq \R^N \setminus \cl(\X_0) = (17, 22)^N$.
+  \item[$(\Leftarrow)$] Réciproquement, si $\mathbb{Y}_{\xi, \sigma} \subset (17, 22)^N$, alors $\mathbb{Y}_{\xi, \sigma} \cap \cl(\X_0) = \emptyset$, donc $0 \notin g(\xi, \sigma)$ et $g(\xi, \sigma) \subseteq Q_s$. De plus, $\mathbb{Y}_{\xi, \sigma}$ est non vide (produit d'intervalles non vides) et inclus dans $\X = \bigcup_{\xi^+ \in Q_s} \X_{\xi^+}$, donc il existe nécessairement au moins un $\xi^+ \in Q_s$ tel que $\mathbb{Y}_{\xi, \sigma} \cap \cl(\X_{\xi^+}) \neq \emptyset$, c'est-à-dire $g(\xi, \sigma) \neq \emptyset$.
+\end{itemize}
+
+\noindent Enfin, puisque $\mathbb{Y}_{\xi, \sigma} = \prod_{i=1}^N I(\tau_i(c), u_i)$ est un produit cartésien d'intervalles non vides et $(17, 22)^N$ est lui-même un produit cartésien, on a :
+\[
+  \prod_{i=1}^{N} I\bigl(\tau_i(c), u_i\bigr) \subset (17, 22)^N
+  \;\Longleftrightarrow\;
+  \forall i \in \{1, \dots, N\},\; I\bigl(\tau_i(c), u_i\bigr) \subset (17, 22)
+  \;\Longleftrightarrow\;
+  \forall i \in \{1, \dots, N\},\; u_i \in H_{\mathrm{loc}}\bigl(\tau_i(c)\bigr),
+\]
+ce qui établit~\eqref{eq:cart_equiv}.
+\end{proof}
+
+\begin{lemme}[Convergence en une itération : $R^* = Q_s$ pour tout $N \ge 3$]
+\label{lem:full_invariance}
+Sous les paramètres du challenge, pour tout $N \ge 3$, la commande constante $\sigma^* = (0{,}3, \dots, 0{,}3)$ vérifie $0{,}3 \in H_{\mathrm{loc}}(\tau)$ pour tous les $1\,000$ triplets $\tau \in \{0, \dots, 9\}^3$. En conséquence, l'Algorithme~1 converge en \textbf{une seule itération} et le domaine de sûreté maximal vaut :
+\begin{equation}
+  R^* = R_1 = R_0 = Q_s = \{1, \dots, 10^N\}.
+  \label{eq:r_star_full}
+\end{equation}
+\end{lemme}
+
+\begin{proof}
+Fixons $u = 0{,}3$. D'après~\eqref{eq:diag_coeff}, on a $d(0{,}3) = 0{,}028 > 0$, $\alpha = 0{,}45 > 0$, $\beta T_e = -0{,}045$ et $\gamma T_h u = 0{,}09 \times 50 \times 0{,}3 = 1{,}35$. La fonction $f_i(\cdot, \cdot, \cdot, 0{,}3)$ étant strictement croissante en chacune de ses trois variables de température sur $[17, 22]^3$, son minimum et son maximum globaux sont atteints respectivement aux deux coins extrémaux $(17, 17, 17)$ et $(22, 22, 22)$ :
+\begin{align*}
+  f_i(17, 17, 17, 0{,}3)
+  &= 0{,}028 \times 17 + 0{,}45 \times (17 + 17) - 0{,}045 + 1{,}35 \\
+  &= 0{,}476 + 15{,}3 - 0{,}045 + 1{,}35 = 17{,}081 > 17, \\[4pt]
+  f_i(22, 22, 22, 0{,}3)
+  &= 0{,}028 \times 22 + 0{,}45 \times (22 + 22) - 0{,}045 + 1{,}35 \\
+  &= 0{,}616 + 19{,}8 - 0{,}045 + 1{,}35 = 21{,}721 < 22.
+\end{align*}
+Pour tout triplet $\tau = (c_{\mathrm{prev}}, c_{\mathrm{cur}}, c_{\mathrm{next}}) \in \{0, \dots, 9\}^3$, on a $17 \le \underline{x}_{c_j} < \overline{x}_{c_j} \le 22$, donc par monotonie :
+\[
+  I(\tau, 0{,}3) \subseteq \bigl[f_i(17, 17, 17, 0{,}3),\; f_i(22, 22, 22, 0{,}3)\bigr] = [17{,}081\,;\, 21{,}721] \subset (17, 22).
+\]
+Par définition~\eqref{eq:h_loc}, $0{,}3 \in H_{\mathrm{loc}}(\tau)$ pour tous les $1\,000$ triplets $\tau \in \{0, \dots, 9\}^3$.
+
+En appliquant le Lemme~\ref{lem:cartesian_factorization} à $\sigma^* = (0{,}3, \dots, 0{,}3)$, on obtient $\emptyset \neq g(\xi, \sigma^*) \subseteq Q_s = R_0$ pour tout $\xi \in Q_s$. Ainsi tout $\xi \in Q_s$ appartient à $\Pre(R_0)$, ce qui entraîne $R_1 = Q_s \cap \Pre(R_0) = Q_s = R_0$. L'Algorithme~1 s'arrête donc à $k = 1$ avec $R^* = Q_s$.
+\end{proof}
+
+\begin{encadre}{Théorème principal --- Équivalence exacte $H^* = H_{\mathrm{compact}}$}
+\begin{theoreme}[Équivalence mathématique du contrôleur maximal et du contrôleur compact]
+\label{thm:equivalence}
+Pour tout nombre de pièces $N \ge 3$, le domaine de sûreté maximal est $R^* = Q_s$ et le contrôleur compact factorisé $H_{\mathrm{compact}}$ est \textbf{ensemblistement identique} au contrôleur de sûreté maximal monolithique $H^*$ :
+\begin{equation}
+  \forall \xi \in Q_s, \qquad H_{\mathrm{compact}}(\xi) = H^*(\xi).
+  \label{eq:main_eq}
+\end{equation}
+\end{theoreme}
+\end{encadre}
+
+\begin{proof}
+Soient $N \ge 3$, $\xi = \xi(c) \in Q_s$ et $\sigma = (u_1, \dots, u_N) \in \Sigma$. En combinant le Lemme~\ref{lem:full_invariance} ($R^* = Q_s$), la Définition~\ref{def:h_star} et le Lemme~\ref{lem:cartesian_factorization}, on obtient la chaîne d'équivalences logiques :
+\begin{align*}
+  \sigma \in H^*(\xi)
+  &\iff \emptyset \neq g(\xi, \sigma) \subseteq R^* && \text{(Définition~\ref{def:h_star}, Théorème~2 de~\cite{girard2024})} \\
+  &\iff \emptyset \neq g(\xi, \sigma) \subseteq Q_s && \text{(Lemme~\ref{lem:full_invariance} : $R^* = Q_s$)} \\
+  &\iff \forall i \in \{1, \dots, N\},\; u_i \in H_{\mathrm{loc}}\bigl(\tau_i(c)\bigr) && \text{(Lemme~\ref{lem:cartesian_factorization})} \\
+  &\iff \sigma \in \prod_{i=1}^{N} H_{\mathrm{loc}}\bigl(\tau_i(c)\bigr) = H_{\mathrm{compact}}(\xi). && \text{(Définition~\ref{def:h_compact})}
+\end{align*}
+Cette double implication étant valable pour tout $\sigma \in \Sigma$ et tout $\xi \in Q_s$, on conclut que $H_{\mathrm{compact}}(\xi) = H^*(\xi)$ pour tout $\xi \in Q_s$.
+\end{proof}
+
+% ==============================================================================
+\section{Compression sans perte et limite de l'équivalence}
+% ==============================================================================
+
+\subsection{Rôle exact de la symétrie cyclique et bilan mémoire}
+
+Il convient de distinguer deux propriétés structurelles indépendantes :
+\begin{enumerate}[label=\textbf{\arabic*.}]
+  \item \textbf{La factorisation $H^*(\xi) = \prod_{i=1}^N H_{\mathrm{loc},i}(\tau_i(c))$} repose uniquement sur la forme pavée des surapproximations (Lemme~\ref{lem:cartesian_factorization}) et sur le fait que $R^* = Q_s$ est un pavé (Lemme~\ref{lem:full_invariance}). Elle demeurerait vraie même pour un anneau hétérogène où chaque pièce $i$ aurait des constantes thermiques propres $(\alpha_i, \beta_i, \gamma_i)$ (nécessitant alors $N$ tables locales distinctes, soit $O(N)$ octets).
+  \item \textbf{L'invariance par décalage cyclique} de l'anneau homogène implique $H_{\mathrm{loc},1} = \dots = H_{\mathrm{loc},N} = H_{\mathrm{loc}}$, réduisant le stockage de $O(N)$ à \textbf{$O(1)$} :
+  \begin{itemize}[nosep]
+    \item Table transitoire d'abstraction locale (\code{LocalExactModel::ranges[3000]}) : $10^3 \times 3 = 3\,000$ entrées de $16$ octets $= 48\,000$ octets ($\approx 46{,}9$~Kio), libérée après la synthèse.
+    \item Contrôleur compact persisté (\code{LocalWitnessCertificate}) : $1\,000$ octets pour \code{localSafeMask[1000]} (qui encode intégralement et sans perte $H^*$ en packant $3$ bits par triplet) $+ 1\,000$ octets de cache \code{bestLocalWitness[1000]} $+ 12$ octets de métadonnées $\approx 2$~Ko au total (contre $O(10^N \cdot 3^N)$ pour le stockage explicite de $H^*$ en Mode~1).
+  \end{itemize}
+\end{enumerate}
+
+\subsection{Quand l'équivalence cesse-t-elle de tenir ?}
+
+\begin{encadre}[warn]{Limites du théorème (Cas où $R^*$ n'est pas un produit cartésien)}
+L'équivalence exacte $H_{\mathrm{compact}} = H^*$ repose de façon critique sur le fait que le point fixe $R^*$ soit un \textbf{produit cartésien} (ici $R^* = Q_s = [17, 22]^N$). Dès que $R^* \subsetneq Q_s$ n'est plus un pavé cartésien, la condition globale $g(\xi, \sigma) \subseteq R^*$ couple les pièces entre elles et ne peut plus être représentée exactement par un produit cartésien de contrôleurs locaux.
+\end{encadre}
+
+\begin{exemple}[Contre-exemple concret à $N = 3$ pièces]
+Considérons exactement le même bâtiment à $N = 3$ pièces et les mêmes paramètres thermiques ($\alpha = 0{,}45$, $\beta = 0{,}045$, $\gamma = 0{,}09$, $T_e = -1$, $T_h = 50$), mais en retirant une seule cellule froide de la zone de sûreté :
+\[
+  Q_s' \coloneqq Q_s \setminus \bigl\{\xi(0,0,0)\bigr\}
+\]
+(on interdit que les $3$ pièces se trouvent simultanément dans $[17\,;\,17{,}5]$). L'Algorithme~1 converge alors en une itération vers $R^* = Q_s'$ ($999$ états sûrs), qui n'est plus un produit cartésien.
+
+Plaçons-nous dans l'état sûr $\xi = \xi(1, 0, 0) \in R^*$ (pièce~$1$ dans $[17{,}5\,;\,18]$, pièces~$2$ et~$3$ dans $[17\,;\,17{,}5]$) et évaluons trois commandes $\sigma = (u_1, u_2, u_3)$ :
+\begin{itemize}[nosep]
+  \item Pour $\sigma_1 = (0{,}6\,;\, 0{,}3\,;\, 0{,}3)$ : $I_1 = [17{,}973\,;\, 18{,}423]$ (cellules $\{1,2\}$) et $I_2 = I_3 = [17{,}306\,;\, 17{,}770]$ (cellules $\{0,1\}$), donc $g(\xi, \sigma_1) = \{1,2\} \times \{0,1\} \times \{0,1\} \not\ni \xi(0,0,0)$. Ainsi $\sigma_1 \in H^*(\xi)$.
+  \item Pour $\sigma_2 = (0{,}3\,;\, 0{,}6\,;\, 0{,}3)$ : $I_1 = [17{,}095\,;\, 17{,}559]$ ($\{0,1\}$), $I_2 = [18{,}197\,;\, 18{,}648]$ ($\{2,3\}$) et $I_3 = [17{,}306\,;\, 17{,}770]$ ($\{0,1\}$), donc $g(\xi, \sigma_2) = \{0,1\} \times \{2,3\} \times \{0,1\} \not\ni \xi(0,0,0)$. Ainsi $\sigma_2 \in H^*(\xi)$.
+  \item Pour $\sigma_3 = (0{,}3\,;\, 0{,}3\,;\, 0{,}3)$ : $g(\xi, \sigma_3) = \{0,1\}^3 \ni \xi(0,0,0) \notin R^*$. Donc $\sigma_3 \notin H^*(\xi)$ (alors que $\sigma_3 \in H_{\mathrm{compact}}(\xi)$).
+\end{itemize}
+\textbf{Conclusion :} $H^*(\xi(1,0,0))$ ne peut s'écrire sous \emph{aucune} forme factorisée $A_1 \times A_2 \times A_3$ : en effet, $\sigma_2 \in A_1 \times A_2 \times A_3$ impose $0{,}3 \in A_1$ et $0{,}3 \in A_3$, tandis que $\sigma_1 \in A_1 \times A_2 \times A_3$ impose $0{,}3 \in A_2$, ce qui forcerait $\sigma_3 = (0{,}3\,;\, 0{,}3\,;\, 0{,}3) \in A_1 \times A_2 \times A_3 = H^*(\xi)$, contradiction !
+\end{exemple}
+
+% ==============================================================================
+\section{Positionnement par rapport à la littérature du cours}
+% ==============================================================================
+
+Le Tableau~\ref{tab:refs} précise exactement ce que chaque référence de~\cite{girard2024} apporte à la preuve afin d'éviter toute confusion en soutenance (en particulier entre \emph{complétude d'une abstraction}~\cite[§4.2]{girard2024} et \emph{équivalence de deux contrôleurs sur un même modèle symbolique}).
+
+\begin{table}[htbp]
+  \centering
+  \renewcommand{\arraystretch}{1.22}
+  \small
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.6cm} >{\raggedright\arraybackslash}p{4.3cm} >{\raggedright\arraybackslash}p{7.6cm}@{}}
+    \toprule
+    \textbf{Référence} & \textbf{Objet dans la littérature} & \textbf{Rôle exact dans notre preuve} \\
+    \midrule
+    Girard, Meyer, Saoud \cite[§1.1.3]{girard2024}, \cite{angeli2003,meyer2021} &
+    Surapproximations par intervalles (monotonie coopérative). &
+    Fonde le Lemme~\ref{lem:cartesian_factorization} : chaque transition symbolique est issue d'un pavé $\prod_i I(\tau_i, u_i)$. \\
+    Girard, Meyer, Saoud \cite[§2.1]{girard2024} &
+    Algorithme~1, Théorème~2, Corollaire~1, optimisation multivaluée (§2.1.3, \cite{meyer2015}). &
+    Définit $R^*$ et $H^*$, certifie la boucle fermée concrète et justifie la préservation de l'ensemble multivalué $H^*$ plutôt que du seul témoin $0{,}3$. \\
+    Ivanova, Saoud, Girard \cite{ivanova2022} (\cite[§4.1.2, réf.~20]{girard2024}) &
+    Synthèse paresseuse pour systèmes monotones et sûreté dirigée. &
+    Éclaire le Lemme~\ref{lem:full_invariance} : $[17, 22]^N = [17, +\infty)^N \cap (-\infty, 22]^N$ est une intersection de contraintes dirigées ; les $2$ coins extrémaux suffisent pour prouver $R^* = Q_s$. \emph{Ne prouve pas seul la factorisation en $H_{\mathrm{loc}}$.} \\
+    Saoud, Girard, Fribourg \cite{saoud2020} (\cite[§4.1.4, réf.~31]{girard2024}) &
+    Synthèse compositionnelle par contrats hypothèse-garantie (Fig.~9b). &
+    Fournit le cadre théorique du Mode~3. Notre Théorème~\ref{thm:equivalence} démontre que, sur ce benchmark précis ($R^* = Q_s$), cette approche n'introduit \textbf{aucun conservatisme}. \\
+    \bottomrule
+  \end{tabular}
+  \caption{Correspondance entre les étapes de la preuve et les références de Girard, Meyer et Saoud (S~7467~V1).}
+  \label{tab:refs}
+\end{table}
+
+% ==============================================================================
+\begin{thebibliography}{9}
+
+\bibitem{girard2024}
+A.~Girard, P.-J.~Meyer et A.~Saoud,
+\emph{Approches symboliques pour le contrôle des systèmes non linéaires},
+Techniques de l'Ingénieur, Réf.~S~7467~V1, septembre 2024.
+
+\bibitem{angeli2003}
+D.~Angeli et E.~D.~Sontag,
+\emph{Monotone control systems},
+IEEE Transactions on Automatic Control, vol.~48, n\textsuperscript{o}~10, p.~1684--1698, 2003.
+
+\bibitem{meyer2021}
+P.-J.~Meyer, A.~Devonport et M.~Arcak,
+\emph{Interval Reachability Analysis: Bounding Trajectories of Uncertain Systems with Boxes for Control and Verification},
+Springer, 2021.
+
+\bibitem{meyer2015}
+P.-J.~Meyer,
+\emph{Invariance and symbolic control of cooperative systems for temperature regulation in intelligent buildings},
+Thèse de doctorat, Université Grenoble Alpes, 2015.
+
+\bibitem{ivanova2022}
+E.~Ivanova, A.~Saoud et A.~Girard,
+\emph{Lazy controller synthesis for monotone transition systems and directed safety specifications},
+Automatica, vol.~135, 109993, 2022.
+
+\bibitem{saoud2020}
+A.~Saoud, A.~Girard et L.~Fribourg,
+\emph{Contract-based design of symbolic controllers for safety in distributed multiperiodic sampled-data systems},
+IEEE Transactions on Automatic Control, vol.~66, n\textsuperscript{o}~3, p.~1055--1070, 2020.
+
+\end{thebibliography}
+
+\end{document}

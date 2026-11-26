@@ -39,7 +39,7 @@ std::string formatRamMiB(double mib) {
 }
 
 void renderParametersPanel(ChallengeUiState& state) {
-    if (!ImGui::CollapsingHeader("1. Unknown Parameter N & Fixed Rules", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!ImGui::CollapsingHeader("1. Unknown Parameter N & Solver Method", ImGuiTreeNodeFlags_DefaultOpen)) {
         return;
     }
 
@@ -56,8 +56,18 @@ void renderParametersPanel(ChallengeUiState& state) {
         changed = true;
     }
 
-    const char* reachItems[] = {"Cooperative Monotone (corner bounds)", "Bounded Derivative (Jacobian)"};
-    ImGui::SetNextItemWidth(260.0f);
+    const char* solverItems[] = {
+        "Bitset + Temoin (monolithic, no graph)",
+        "Temoin Compact O(1) (local contract)",
+        "Explicit Graph (exact symctrl pipeline)"
+    };
+    ImGui::SetNextItemWidth(290.0f);
+    if (ImGui::Combo("Solver", &state.solverModeIndex, solverItems, 3)) {
+        changed = true;
+    }
+
+    const char* reachItems[] = {"Cooperative Monotone (exact integer)", "Bounded Derivative (exact integer)"};
+    ImGui::SetNextItemWidth(290.0f);
     if (ImGui::Combo("Reachability", &state.reachabilityIndex, reachItems, 2)) {
         changed = true;
     }
@@ -78,22 +88,22 @@ void renderParametersPanel(ChallengeUiState& state) {
     ImGui::BulletText("alpha=%.2f, beta=%.3f, gamma=%.2f, Te=%.0f, Th=%.0f",
                       kAlpha, kBeta, kGamma, kOutsideTemp, kHeaterTemp);
 
-    const ScaleEstimate est = estimateChallengeScale(static_cast<std::size_t>(state.roomsInput));
+    const SolverMode mode = state.selectedSolverMode();
+    const ScaleEstimate est = estimateChallengeScale(static_cast<std::size_t>(state.roomsInput), mode);
     ImGui::Spacing();
-    ImGui::TextDisabled("Pre-flight Scale Estimate for N = %d:", state.roomsInput);
+    ImGui::TextDisabled("Pre-flight Scale Estimate for N = %d (%s):",
+                        state.roomsInput, toString(mode));
     const std::string statesStr = formatCount(est.statesFitUint64, est.symbolicStates, est.statesApprox);
     const std::string inputsStr = formatCount(est.inputsFitUint64, est.symbolicInputs, est.inputsApprox);
-    const std::string pairsStr = formatCount(est.pairsFitUint64, est.stateInputPairs, est.pairsApprox);
     const std::string ramStr = formatRamMiB(est.estimatedRamMiB);
 
     ImGui::Text("Symbolic states (10^N): %s", statesStr.c_str());
     ImGui::Text("Symbolic inputs (3^N) : %s", inputsStr.c_str());
-    ImGui::Text("State-input pairs     : %s", pairsStr.c_str());
     if (est.estimatedRamMiB > static_cast<double>(state.memoryBudgetMiB)) {
         ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.30f, 1.0f),
-                           "Est. explicit RAM     : %s (exceeds budget)", ramStr.c_str());
+                           "Est. solver RAM       : %s (exceeds budget)", ramStr.c_str());
     } else {
-        ImGui::Text("Est. explicit RAM     : %s", ramStr.c_str());
+        ImGui::Text("Est. solver RAM       : %s", ramStr.c_str());
     }
 
     if (changed) {
@@ -122,17 +132,33 @@ void renderSynthesisPanel(ChallengeUiState& state) {
     } else if (state.synthesis.has_value()) {
         const auto& m = state.synthesis->metrics;
         ImGui::TextColored(ImVec4(0.35f, 0.90f, 0.45f, 1.0f),
-                           "Ready for N = %zu (%s)",
-                           m.rooms, symctrl::toString(m.numericGuarantee));
+                           "Ready for N = %zu [%s | %s]",
+                           m.rooms, toString(m.solverMode), symctrl::toString(m.numericGuarantee));
         ImGui::Text("T_abs (abstraction) : %.4f s", m.abstractionSeconds);
         ImGui::Text("T_ctrl (synthesis)  : %.4f s", m.synthesisSeconds);
         ImGui::Text("Total (T_abs+T_ctrl): %.4f s", m.totalSeconds);
-        ImGui::Text("Controllable states : %llu / %llu (%.2f%%)",
-                    static_cast<unsigned long long>(m.controllableStates),
-                    static_cast<unsigned long long>(m.internalStates),
-                    m.controllablePercent);
-        ImGui::Text("Stored edges        : %llu",
-                    static_cast<unsigned long long>(m.storedEdges));
+        if (m.statesFitUint64) {
+            ImGui::Text("Controllable states : %llu / %llu (%.2f%%)",
+                        static_cast<unsigned long long>(m.controllableStates),
+                        static_cast<unsigned long long>(m.internalStates),
+                        m.controllablePercent);
+        } else {
+            ImGui::Text("Controllable states : %.2f%% of %.2e",
+                        m.controllablePercent, m.internalStatesApprox);
+        }
+        if (m.uniformWitnessQ >= 0) {
+            ImGui::Text("Uniform witness u_i : %.1f (fixed-point iters: %u)",
+                        kHeaterInputs[static_cast<std::size_t>(m.uniformWitnessQ)],
+                        m.fixedPointIterations);
+        } else {
+            ImGui::Text("Fixed-point iters   : %u", m.fixedPointIterations);
+        }
+        if (m.solverMode == SolverMode::ExplicitGraph) {
+            ImGui::Text("Stored edges        : %llu",
+                        static_cast<unsigned long long>(m.storedEdges));
+        } else {
+            ImGui::Text("Stored edges        : 0 (matrix-free)");
+        }
         if (m.memoryMeasured) {
             ImGui::Text("Peak RSS / Current  : %.2f MiB / %.2f MiB (%s)",
                         m.peakMemoryMiB, m.currentMemoryMiB,
@@ -171,7 +197,7 @@ void renderSimulationPanel(ChallengeUiState& state) {
         state.applyAlternatingInitial(17.5, 21.5);
     }
 
-    const float listHeight = std::min(150.0f, 26.0f * static_cast<float>(state.initialTemperatures.size()) + 10.0f);
+    const float listHeight = std::min(140.0f, 26.0f * static_cast<float>(state.initialTemperatures.size()) + 10.0f);
     ImGui::BeginChild("InitialTempList", ImVec2(0.0f, listHeight), true);
     for (std::size_t i = 0; i < state.initialTemperatures.size(); ++i) {
         const std::string label = "Room " + std::to_string(i + 1) + " T0 (C)";
@@ -186,9 +212,14 @@ void renderSimulationPanel(ChallengeUiState& state) {
             state.horizon = 1;
         }
     }
-    const char* stratItems[] = {"Min Heater Energy", "First Safe Action", "Max Heating"};
-    ImGui::SetNextItemWidth(180.0f);
-    ImGui::Combo("Safe Policy Choice", &state.strategyIndex, stratItems, 3);
+    const char* stratItems[] = {
+        "Certified Witness (0.3 / max margin)",
+        "Min Heater Energy",
+        "First Safe Action",
+        "Max Heating"
+    };
+    ImGui::SetNextItemWidth(240.0f);
+    ImGui::Combo("Safe Policy Choice", &state.strategyIndex, stratItems, 4);
 
     const bool canSimulate = state.synthesis.has_value()
         && !state.isSynthesisRunning()
@@ -225,7 +256,7 @@ void renderHistoryTable(const ChallengeUiState& state) {
         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp;
     if (ImGui::BeginTable("HistoryTable", 6, flags)) {
         ImGui::TableSetupColumn("N");
-        ImGui::TableSetupColumn("10^N");
+        ImGui::TableSetupColumn("Mode");
         ImGui::TableSetupColumn("T_abs (s)");
         ImGui::TableSetupColumn("T_ctrl (s)");
         ImGui::TableSetupColumn("Peak (MiB)");
@@ -237,11 +268,11 @@ void renderHistoryTable(const ChallengeUiState& state) {
             ImGui::TableNextColumn();
             ImGui::Text("%zu", m.rooms);
             ImGui::TableNextColumn();
-            ImGui::Text("%llu", static_cast<unsigned long long>(m.internalStates));
+            ImGui::Text("%s", toString(m.solverMode));
             ImGui::TableNextColumn();
-            ImGui::Text("%.3f", m.abstractionSeconds);
+            ImGui::Text("%.4f", m.abstractionSeconds);
             ImGui::TableNextColumn();
-            ImGui::Text("%.3f", m.synthesisSeconds);
+            ImGui::Text("%.4f", m.synthesisSeconds);
             ImGui::TableNextColumn();
             ImGui::Text("%.1f", m.peakMemoryMiB);
             ImGui::TableNextColumn();
@@ -275,7 +306,8 @@ void renderPlotsPanel(const ChallengeUiState& state) {
         if (state.plottedRun.has_value()) {
             const auto& run = *state.plottedRun;
             const int count = static_cast<int>(run.timeSteps.size());
-            for (std::size_t r = 0; r < run.roomTemperatures.size(); ++r) {
+            const std::size_t maxCurves = std::min<std::size_t>(run.roomTemperatures.size(), 16);
+            for (std::size_t r = 0; r < maxCurves; ++r) {
                 const std::string label = "Room " + std::to_string(r + 1);
                 ImPlot::PlotLine(label.c_str(), run.timeSteps.data(), run.roomTemperatures[r].data(), count);
             }
@@ -294,7 +326,8 @@ void renderPlotsPanel(const ChallengeUiState& state) {
         if (state.plottedRun.has_value() && !state.plottedRun->inputTimeSteps.empty()) {
             const auto& run = *state.plottedRun;
             const int count = static_cast<int>(run.inputTimeSteps.size());
-            for (std::size_t r = 0; r < run.roomInputs.size(); ++r) {
+            const std::size_t maxCurves = std::min<std::size_t>(run.roomInputs.size(), 16);
+            for (std::size_t r = 0; r < maxCurves; ++r) {
                 const std::string label = "u_" + std::to_string(r + 1);
                 ImPlot::PlotStairs(label.c_str(), run.inputTimeSteps.data(), run.roomInputs[r].data(), count);
             }
@@ -318,7 +351,7 @@ void renderChallengeUi(ChallengeUiState& state) {
 
     ImGui::Begin("SymCtrlChallengeRoot", nullptr, rootFlags);
 
-    ImGui::BeginChild("LeftPanel", ImVec2(460.0f, 0.0f), true);
+    ImGui::BeginChild("LeftPanel", ImVec2(480.0f, 0.0f), true);
     ImGui::Text("Circular Building Temperature Regulation Challenge");
     ImGui::Separator();
     renderParametersPanel(state);
